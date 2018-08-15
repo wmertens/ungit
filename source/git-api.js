@@ -10,6 +10,8 @@ const gitPromise = require('./git-promise');
 const fs = require('fs').promises;
 const watch = require('fs').watch;
 const ignore = require('ignore');
+const crypto = require('crypto');
+const nodegit = require('nodegit');
 
 const isMac = /^darwin/.test(process.platform);
 const isWindows = /^win/.test(process.platform);
@@ -212,10 +214,9 @@ exports.registerApi = (env) => {
   });
 
   app.post(`${exports.pathPrefix}/init`, ensureAuthenticated, ensurePathExists, (req, res) => {
-    jsonResultOrFailProm(
-      res,
-      gitPromise(req.body.bare ? ['init', '--bare', '--shared'] : ['init'], req.body.path)
-    );
+    var path = req.body.path;
+    var is_bare = req.body.bare ? 1 : 0; // nodegit requires a number https://github.com/nodegit/nodegit/issues/538
+    jsonResultOrFailProm(res, nodegit.Repository.init(path, is_bare));
   });
 
   app.post(
