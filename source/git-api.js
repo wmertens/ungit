@@ -672,10 +672,12 @@ exports.registerApi = (env) => {
     ensureAuthenticated,
     ensurePathExists,
     (req, res) => {
-      jsonResultOrFailProm(
-        res,
-        gitPromise(['remote', 'add', req.params.name, req.body.url], req.body.path)
-      );
+      let name = req.params.name;
+      let url = req.body.url;
+      let pathToRepo = req.body.path;
+      nodegit.Repository.open(pathToRepo).then(function (repo) {
+        jsonResultOrFailProm(res, nodegit.Remote.create(repo, name, url));
+      });
     }
   );
 
