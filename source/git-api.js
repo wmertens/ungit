@@ -174,17 +174,23 @@ exports.registerApi = (env) => {
       return gitPromise(commands, repoPath, allowedCodes, outPipe, inPipe, timeout);
     }
   };
-
-  const jsonResultOrFailProm = (res, promise) => {
-    return promise
-      .then((result) => {
-        res.json(result || {});
-      })
+  const jsonResultOrFailProm = (res, promise) =>
+    // TODO shouldn't this be a boolean instead of an object?
+    promise
+      .then((o) => res.json(o == null ? {} : o))
       .catch((err) => {
         winston.warn('Responding with ERROR: ', JSON.stringify(err));
         res.status(400).json(err);
       });
-  };
+
+  const w = (fn) => (req, res) =>
+    new Promise((resolve) => resolve(fn(req, res))).catch((err) => {
+      winston.warn('Responding with ERROR: ', err);
+      res.status(500).json(err);
+    });
+
+  const jw = (fn) => (req, res) =>
+    jsonResultOrFailProm(res, new Promise((resolve) => resolve(fn(req))));
 
   const credentialsOption = (socketId, remote) => {
     let portAndRootPath = `${config.port}`;
@@ -209,22 +215,31 @@ exports.registerApi = (env) => {
     }
   };
 
-  app.get(`${exports.pathPrefix}/status`, ensureAuthenticated, ensurePathExists, (req, res) => {
-    jsonResultOrFailProm(res, gitPromise.status(req.query.path, null));
-  });
+  app.get(
+    `${exports.pathPrefix}/status`,
+    ensureAuthenticated,
+    ensurePathExists,
+    jw((req) => gitPromise.status(req.query.path, null))
+  );
 
-  app.post(`${exports.pathPrefix}/init`, ensureAuthenticated, ensurePathExists, (req, res) => {
-    var path = req.body.path;
-    var is_bare = req.body.bare ? 1 : 0; // nodegit requires a number https://github.com/nodegit/nodegit/issues/538
-    jsonResultOrFailProm(res, nodegit.Repository.init(path, is_bare));
-  });
+  app.post(
+    `${exports.pathPrefix}/init`,
+    ensureAuthenticated,
+    ensurePathExists,
+    jw((req) => {
+      var path = req.body.path;
+      // nodegit requires a number https://github.com/nodegit/nodegit/issues/538
+      var is_bare = req.body.bare ? 1 : 0;
+      return nodegit.Repository.init(path, is_bare);
+    })
+  );
 
   app.post(
     `${exports.pathPrefix}/clone`,
     ensureAuthenticated,
     ensurePathExists,
     ensureValidSocketId,
-    (req, res) => {
+    w((req, res) => {
       // Default timeout is 2min but clone can take much longer than that (allows up to 2h)
       const timeoutMs = 2 * 60 * 60 * 1000;
       if (res.setTimeout) res.setTimeout(timeoutMs);
@@ -246,7 +261,7 @@ exports.registerApi = (env) => {
       });
 
       jsonResultOrFailProm(res, task).finally(emitGitDirectoryChanged.bind(null, req.body.path));
-    }
+    })
   );
 
   app.post(
@@ -388,51 +403,62 @@ exports.registerApi = (env) => {
       .finally(emitWorkingTreeChanged.bind(null, req.body.path));
   });
 
-  app.get(`${exports.pathPrefix}/gitlog`, ensureAuthenticated, ensurePathExists, (req, res) => {
-    const limit = getNumber(req.query.limit, config.numberOfNodesPerLoad || 25);
-    const skip = getNumber(req.query.skip, 0);
-    const task = gitPromise
-      .log(req.query.path, limit, skip, config.maxActiveBranchSearchIteration)
-      .catch((err) => {
-        if (err.stderr && err.stderr.indexOf("fatal: bad default revision 'HEAD'") == 0) {
-          return { limit: limit, skip: skip, nodes: [] };
-        } else if (
-          /fatal: your current branch '.+' does not have any commits yet.*/.test(err.stderr)
-        ) {
-          return { limit: limit, skip: skip, nodes: [] };
-        } else if (err.stderr && err.stderr.indexOf('fatal: Not a git repository') == 0) {
-          return { limit: limit, skip: skip, nodes: [] };
-        } else {
-          throw err;
-        }
-      });
-    jsonResultOrFailProm(res, task);
-  });
+  app.get(
+    `${exports.pathPrefix}/gitlog`,
+    ensureAuthenticated,
+    ensurePathExists,
+    jw((req) => {
+      const limit = getNumber(req.query.limit, config.numberOfNodesPerLoad || 25);
+      const skip = getNumber(req.query.skip, 0);
+      return gitPromise
+        .log(req.query.path, limit, skip, config.maxActiveBranchSearchIteration)
+        .catch((err) => {
+          if (err.stderr && err.stderr.indexOf("fatal: bad default revision 'HEAD'") == 0) {
+            return { limit: limit, skip: skip, nodes: [] };
+          } else if (
+            /fatal: your current branch '.+' does not have any commits yet.*/.test(err.stderr)
+          ) {
+            return { limit: limit, skip: skip, nodes: [] };
+          } else if (err.stderr && err.stderr.indexOf('fatal: Not a git repository') == 0) {
+            return { limit: limit, skip: skip, nodes: [] };
+          } else {
+            throw err;
+          }
+        });
+    })
+  );
 
-  app.get(`${exports.pathPrefix}/show`, ensureAuthenticated, (req, res) => {
-    jsonResultOrFailProm(
-      res,
+  app.get(
+    `${exports.pathPrefix}/show`,
+    ensureAuthenticated,
+    jw((req) =>
       gitPromise(['show', '--numstat', '-z', req.query.sha1], req.query.path).then(
         gitParser.parseGitLog
       )
-    );
-  });
-
-  app.get(`${exports.pathPrefix}/head`, ensureAuthenticated, ensurePathExists, (req, res) => {
-    const task = gitPromise(
-      ['log', '--decorate=full', '--pretty=fuller', '-z', '--parents', '--max-count=1'],
-      req.query.path
     )
-      .then(gitParser.parseGitLog)
-      .catch((err) => {
-        if (err.stderr.indexOf("fatal: bad default revision 'HEAD'") == 0) return [];
-        else if (/fatal: your current branch '.+' does not have any commits yet.*/.test(err.stderr))
-          return [];
-        else if (err.stderr.indexOf('fatal: Not a git repository') == 0) return [];
-        throw err;
-      });
-    jsonResultOrFailProm(res, task);
-  });
+  );
+
+  app.get(
+    `${exports.pathPrefix}/head`,
+    ensureAuthenticated,
+    ensurePathExists,
+    jw((req) =>
+      gitPromise(
+        ['log', '--decorate=full', '--pretty=fuller', '-z', '--parents', '--max-count=1'],
+        req.query.path
+      )
+        .then(gitParser.parseGitLog)
+        .catch((err) => {
+          if (err.stderr.indexOf("fatal: bad default revision 'HEAD'") == 0) return [];
+          else if (
+            /fatal: your current branch '.+' does not have any commits yet.*/.test(err.stderr)
+          )
+            return [];
+          else if (err.stderr.indexOf('fatal: Not a git repository') == 0) return [];
+          throw err;
+        })
+    )
+  );
 
   app.get(`${exports.pathPrefix}/refs`, ensureAuthenticated, ensurePathExists, (req, res) => {
     if (res.setTimeout) res.setTimeout(tenMinTimeoutMs);
@@ -488,39 +514,45 @@ exports.registerApi = (env) => {
     jsonResultOrFailProm(res, task);
   });
 
-  app.get(`${exports.pathPrefix}/branches`, ensureAuthenticated, ensurePathExists, (req, res) => {
-    const isLocalBranchOnly = req.query.isLocalBranchOnly == 'false';
-    jsonResultOrFailProm(
-      res,
-      gitPromise(['branch', isLocalBranchOnly ? '-a' : ''], req.query.path).then(
+  app.get(
+    `${exports.pathPrefix}/branches`,
+    ensureAuthenticated,
+    ensurePathExists,
+    jw((req) => {
+      const isLocalBranchOnly = req.query.isLocalBranchOnly == 'false';
+      return gitPromise(['branch', isLocalBranchOnly ? '-a' : ''], req.query.path).then(
         gitParser.parseGitBranches
-      )
-    );
-  });
+      );
+    })
+  );
 
-  app.post(`${exports.pathPrefix}/branches`, ensureAuthenticated, ensurePathExists, (req, res) => {
-    const commands = [
-      'branch',
-      req.body.force ? '-f' : '',
-      req.body.name.trim(),
-      (req.body.sha1 || 'HEAD').trim(),
-    ];
+  app.post(
+    `${exports.pathPrefix}/branches`,
+    ensureAuthenticated,
+    ensurePathExists,
+    jw((req) => {
+      const commands = [
+        'branch',
+        req.body.force ? '-f' : '',
+        req.body.name.trim(),
+        (req.body.sha1 || 'HEAD').trim(),
+      ];
 
-    jsonResultOrFailProm(res, gitPromise(commands, req.body.path)).finally(
-      emitGitDirectoryChanged.bind(null, req.body.path)
-    );
-  });
+      return gitPromise(commands, req.body.path).finally(
+        emitGitDirectoryChanged.bind(null, req.body.path)
+      );
+    })
+  );
 
   app.delete(
     `${exports.pathPrefix}/branches`,
     ensureAuthenticated,
     ensurePathExists,
-    (req, res) => {
-      jsonResultOrFailProm(
-        res,
-        gitPromise(['branch', '-D', req.query.name.trim()], req.query.path)
-      ).finally(emitGitDirectoryChanged.bind(null, req.query.path));
-    }
+    jw((req) =>
+      gitPromise(['branch', '-D', req.query.name.trim()], req.query.path).finally(
+        emitGitDirectoryChanged.bind(null, req.query.path)
+      )
+    )
   );
 
   app.delete(
