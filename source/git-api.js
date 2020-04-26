@@ -1087,28 +1087,44 @@ exports.registerApi = (env) => {
     })
   );
 
-  app.post(`${exports.pathPrefix}/stashes`, ensureAuthenticated, ensurePathExists, (req, res) => {
-    jsonResultOrFailProm(
-      res,
-      gitPromise(['stash', 'save', '--include-untracked', req.body.message || ''], req.body.path)
-    )
-      .finally(emitGitDirectoryChanged.bind(null, req.body.path))
-      .finally(emitWorkingTreeChanged.bind(null, req.body.path));
-  });
+  app.post(
+    `${exports.pathPrefix}/stashes`,
+    ensureAuthenticated,
+    ensurePathExists,
+    jw(async (req) => {
+      const { path: repoPath, message = '' } = req.body;
+      const repo = await getRepo(repoPath);
+      const signature = await repo.defaultSignature();
+      const oid = await nodegit.Stash.save(
+        repo,
+        signature,
+        message,
+        nodegit.Stash.FLAGS.INCLUDE_UNTRACKED
+      ).catch(normalizeError);
+      await emitGitDirectoryChanged(repoPath);
+      await emitWorkingTreeChanged(repoPath);
+      return oid;
+    })
+  );
 
   app.delete(
     `${exports.pathPrefix}/stashes/:id`,
     ensureAuthenticated,
     ensurePathExists,
-    (req, res) => {
-      const type = req.query.apply === 'true' ? 'apply' : 'drop';
-      jsonResultOrFailProm(
-        res,
-        gitPromise(['stash', type, `stash@{${req.params.id}}`], req.query.path)
-      )
-        .finally(emitGitDirectoryChanged.bind(null, req.query.path))
-        .finally(emitWorkingTreeChanged.bind(null, req.query.path));
-    }
+    jw(async (req) => {
+      const { path: repoPath, apply } = req.query;
+      const { id } = req.params;
+      const index = Number(id);
+      if (isNaN(index) || index < 0) throw new Error(`Invalid index ${id}`);
+      const repo = await getRepo(repoPath);
+      if (apply === 'true') {
+        await nodegit.Stash.apply(repo, index).catch(normalizeError);
+      } else {
+        await nodegit.Stash.drop(repo, index).catch(normalizeError);
+      }
+      await emitGitDirectoryChanged(repoPath);
+      await emitWorkingTreeChanged(repoPath);
+    })
   );
 
   app.get(`${exports.pathPrefix}/gitconfig`, ensureAuthenticated, (req, res) => {
