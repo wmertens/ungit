@@ -10,7 +10,6 @@ const gitPromise = require('./git-promise');
 const fs = require('fs').promises;
 const watch = require('fs').watch;
 const ignore = require('ignore');
-const crypto = require('crypto');
 const nodegit = require('nodegit');
 
 const isMac = /^darwin/.test(process.platform);
@@ -755,8 +754,8 @@ exports.registerApi = (env) => {
     ensureAuthenticated,
     ensurePathExists,
     jw(async (req) => {
-      let repoPath = req.query.path;
-      let tagName = req.query.name.trim();
+      const repoPath = req.query.path;
+      const tagName = req.query.name.trim();
       const repo = await getRepo(repoPath);
       return nodegit.Tag.delete(repo, tagName)
         .catch(normalizeError)
