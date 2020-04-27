@@ -253,6 +253,35 @@ exports.registerApi = (env) => {
     }
   };
 
+  /** @param {nodegit.Commit} c */
+  const formatCommit = (c) => ({
+    commitDate: c.date().toJSON(),
+    message: c.message(),
+    sha1: c.sha(),
+  });
+  /** @param {nodegit.Commit} c */
+  const getFileStats = async (c) => {
+    const diffList = await c.getDiff();
+    // Each diff has the entire patch set for some reason
+    const patches = await (diffList[0] && diffList[0].patches());
+    if (!(patches && patches.length)) return [];
+
+    return patches.map((patch) => {
+      const stats = patch.lineStats();
+      const oldFileName = patch.oldFile().path();
+      const displayName = patch.newFile().path();
+      return {
+        additions: stats.total_additions,
+        deletions: stats.total_deletions,
+        fileName: displayName,
+        oldFileName,
+        displayName,
+        // TODO figure out how to get this
+        type: 'text',
+      };
+    });
+  };
+
   const jsonResultOrFailProm = (res, promise) => {
     const now = Date.now();
     return promise
@@ -1024,46 +1053,21 @@ exports.registerApi = (env) => {
     }
   );
 
-  app.get(`${exports.pathPrefix}/quickstatus`, ensureAuthenticated, (req, res) => {
-    const task = fs
-      .access(req.query.path)
-      .then(() => {
-        return gitPromise.revParse(req.query.path);
-      })
-      .catch(() => {
-        return { type: 'no-such-path', gitRootPath: req.query.path };
-      });
-    jsonResultOrFailProm(res, task);
-  });
-
-  /** @param {nodegit.Commit} c */
-  const formatCommit = (c) => ({
-    commitDate: c.date().toJSON(),
-    message: c.message(),
-    sha1: c.sha(),
-  });
-  /** @param {nodegit.Commit} c */
-  const getFileStats = async (c) => {
-    const diffList = await c.getDiff();
-    // Each diff has the entire patch set for some reason
-    const patches = await diffList[0].patches();
-    if (!patches.length) return [];
-
-    return patches.map((patch) => {
-      const stats = patch.lineStats();
-      const oldFileName = patch.oldFile().path();
-      const displayName = patch.newFile().path();
-      return {
-        additions: stats.total_additions,
-        deletions: stats.total_deletions,
-        fileName: displayName,
-        oldFileName,
-        displayName,
-        // TODO figure out how to get this
-        type: 'text',
-      };
-    });
-  };
+  app.get(
+    `${exports.pathPrefix}/quickstatus`,
+    ensureAuthenticated,
+    jw(async (req) => {
+      const repoPath = path.normalize(req.query.path);
+      try {
+        const repo = await getRepo(repoPath);
+        if (repo.isBare()) return { type: 'bare', gitRootPath: repo.path().replace(/\/$/, '') };
+        return { type: 'inited', gitRootPath: repo.workdir().replace(/\/$/, '') };
+      } catch (err) {
+        if (err.message.includes('No such')) return { type: 'no-such-path', gitRootPath: repoPath };
+        return { type: 'uninited', gitRootPath: repoPath };
+      }
+    })
+  );
 
   app.get(
     `${exports.pathPrefix}/stashes`,
