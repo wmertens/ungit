@@ -30,7 +30,7 @@ class SubmodulesViewModel {
     return this.server
       .getPromise('/submodules', { path: this.repoPath() })
       .then((submodules) => {
-        this.submodules(submodules && Array.isArray(submodules) ? submodules : []);
+        this.submodules(submodules);
         return this;
       })
       .catch((e) => this.server.unhandledRejection(e));

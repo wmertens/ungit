@@ -7,6 +7,8 @@ const filesToDisplayIncrmentBy = 50;
 const filesToDisplayLimit = filesToDisplayIncrmentBy;
 const mergeTool = ungit.config.mergeTool;
 
+/** @typedef {import('../../source/git-parser').GitStatus} GitStatus */
+
 components.register(
   'staging',
   (args) => new StagingViewModel(args.server, args.repoPath, args.graph)
@@ -147,7 +149,7 @@ class StagingViewModel {
         }),
       this.server
         .getPromise('/status', { path: this.repoPath(), fileLimit: filesToDisplayLimit })
-        .then((status) => {
+        .then((/** @type {GitStatus} */ status) => {
           if (Object.keys(status.files).length > filesToDisplayLimit && !this.loadAnyway) {
             if (this.isDiagOpen) {
               return;
@@ -180,7 +182,7 @@ class StagingViewModel {
     ]);
   }
 
-  loadStatus(status) {
+  loadStatus(/** @type {GitStatus} */ status) {
     this.setFiles(status.files);
     this.inRebase(!!status.inRebase);
     this.inMerge(!!status.inMerge);
@@ -189,6 +191,7 @@ class StagingViewModel {
     this.inCherry(!!status.inCherry && !!status.inConflict);
 
     if (this.inRebase()) {
+      // TODO allow changing commit messages in rebase
       this.commitMessageTitle('Rebase conflict');
       this.commitMessageBody('Commit messages are not applicable!\n(╯°□°）╯︵ ┻━┻');
     } else if (this.inMerge() || this.inCherry()) {
@@ -200,7 +203,7 @@ class StagingViewModel {
     }
   }
 
-  setFiles(files) {
+  setFiles(/** @type {GitStatus['files']} */ files) {
     const newFiles = [];
     for (const fileStatus of Object.values(files)) {
       let fileViewModel = this.filesByPath[fileStatus.fileName];
@@ -470,8 +473,8 @@ class FileViewModel {
     this.conflict(state.conflict);
     this.renamed(state.renamed);
     this.fileType(state.type);
-    this.additions(state.additions != '-' ? `+${state.additions}` : '');
-    this.deletions(state.deletions != '-' ? `-${state.deletions}` : '');
+    this.additions(state.additions != null ? `+${state.additions}` : '');
+    this.deletions(state.deletions != null ? `-${state.deletions}` : '');
     if (this.diff()) {
       this.diff().invalidateDiff();
     } else {

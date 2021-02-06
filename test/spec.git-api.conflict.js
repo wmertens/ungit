@@ -88,8 +88,8 @@ describe('git-api conflict rebase', function () {
         conflict: true,
         renamed: false,
         type: 'text',
-        additions: '4',
-        deletions: '0',
+        additions: 4,
+        deletions: 0,
       });
     });
   });
@@ -164,8 +164,8 @@ describe('git-api conflict checkout', function () {
         conflict: true,
         renamed: false,
         type: 'text',
-        additions: '4',
-        deletions: '0',
+        additions: 4,
+        deletions: 0,
       });
     });
   });
@@ -232,8 +232,8 @@ describe('git-api conflict merge', function () {
         conflict: true,
         renamed: false,
         type: 'text',
-        additions: '4',
-        deletions: '0',
+        additions: 4,
+        deletions: 0,
       });
     });
   });
@@ -343,8 +343,8 @@ describe('git-api conflict solve by deleting', function () {
         conflict: true,
         renamed: false,
         type: 'text',
-        additions: '4',
-        deletions: '0',
+        additions: 4,
+        deletions: 0,
       });
     });
   });

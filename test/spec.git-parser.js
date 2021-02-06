@@ -530,7 +530,7 @@ describe('git-parser submodule', () => {
   it('should work with empty string', () => {
     const gitmodules = '';
     const submodules = gitParser.parseGitSubmodule(gitmodules);
-    expect(submodules).to.eql({});
+    expect(submodules).to.eql([]);
   });
   it('should work with name, path and url', () => {
     const gitmodules = '[submodule "test1"]\npath = /path/to/sub1\nurl = http://example1.com';
@@ -926,8 +926,6 @@ describe('parseGitStatus', () => {
           type: 'text',
         },
       },
-      inited: true,
-      isMoreToLoad: false,
     });
   });
 });

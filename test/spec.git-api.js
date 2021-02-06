@@ -138,8 +138,8 @@ describe('git-api', () => {
         conflict: false,
         renamed: false,
         type: 'text',
-        additions: '-',
-        deletions: '-',
+        additions: null,
+        deletions: null,
       });
     });
   });
@@ -249,8 +249,8 @@ describe('git-api', () => {
         conflict: false,
         renamed: false,
         type: 'text',
-        additions: '-',
-        deletions: '-',
+        additions: null,
+        deletions: null,
       });
     });
   });
@@ -296,8 +296,8 @@ describe('git-api', () => {
         conflict: false,
         renamed: false,
         type: 'text',
-        additions: '-',
-        deletions: '-',
+        additions: null,
+        deletions: null,
       });
     });
   });

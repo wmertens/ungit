@@ -11,6 +11,7 @@ const fs = require('fs').promises;
 const watch = require('fs').watch;
 const ignore = require('ignore');
 const nodegit = require('nodegit');
+const fileType = require('./utils/file-type.js');
 
 const isMac = /^darwin/.test(process.platform);
 const isWindows = /^win/.test(process.platform);
@@ -258,6 +259,7 @@ exports.registerApi = (env) => {
     message: c.message(),
     sha1: c.sha(),
   });
+
   /** @param {nodegit.Commit} c */
   const getFileStats = async (c) => {
     const diffList = await c.getDiff();
@@ -269,15 +271,15 @@ exports.registerApi = (env) => {
       const stats = patch.lineStats();
       const oldFileName = patch.oldFile().path();
       const displayName = patch.newFile().path();
-      return {
+      return /** @type {gitParser.FileStatus} */ ({
         additions: stats.total_additions,
         deletions: stats.total_deletions,
         fileName: displayName,
         oldFileName,
         displayName,
         // TODO figure out how to get this
-        type: 'text',
-      };
+        type: fileType(displayName),
+      });
     });
   };
 
