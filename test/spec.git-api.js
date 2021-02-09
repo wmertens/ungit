@@ -54,7 +54,7 @@ describe('git-api', () => {
   it('quickstatus should say uninited in uninited directory', () => {
     return common
       .get(req, '/quickstatus', { path: testDir })
-      .then((res) => expect(res).to.eql({ type: 'uninited', gitRootPath: testDir }));
+      .catch((e) => expect(e.errorCode).to.be('no-such-path'));
   });
 
   it('status should fail in non-existing directory', () => {
