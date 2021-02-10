@@ -134,11 +134,12 @@ class StagingViewModel {
 
   refreshContent() {
     return Promise.all([
+      // TODO we only use the title???
       this.server
         .getPromise('/head', { path: this.repoPath(), limit: 1 })
-        .then((log) => {
-          if (log.length > 0) {
-            const array = log[0].message.split('\n');
+        .then((head) => {
+          if (head) {
+            const array = head.message.split('\n');
             this.HEAD({ title: array[0], body: array.slice(2).join('\n') });
           } else this.HEAD(null);
         })

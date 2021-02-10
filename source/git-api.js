@@ -457,7 +457,10 @@ exports.registerApi = (env) => {
         ['log', '--decorate=full', '--pretty=fuller', '-z', '--parents', '--max-count=1'],
         req.query.path
       )
-        .then(gitParser.parseGitLog)
+        .then((text) => {
+          const out = gitParser.parseGitLog(text);
+          return out[0];
+        })
         .catch((err) => {
           if (err.stderr.indexOf("fatal: bad default revision 'HEAD'") == 0) return [];
           else if (
