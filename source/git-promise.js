@@ -50,6 +50,7 @@ const gitExecutorProm = (args, retryCount) => {
   return rateLimiter()
     .then(() => {
       return new Promise((resolve, reject) => {
+        console.log(`git executing: ${args.repoPath} ${args.commands.join(' ')}`);
         if (config.logGitCommands)
           winston.info(`git executing: ${args.repoPath} ${args.commands.join(' ')}`);
         let rejectedError = null;

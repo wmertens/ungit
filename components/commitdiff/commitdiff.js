@@ -24,7 +24,7 @@ class CommitDiff {
   loadFileLineDiffs(args) {
     const tempCommitLineDiffs = [];
     const lineDiffLength = this.commitLineDiffs().length;
-
+    if (!args.fileLineDiffs) return;
     args.fileLineDiffs
       .slice(lineDiffLength === 0 ? 0 : lineDiffLength + 1, this.maxNumberOfFilesShown)
       .forEach((fileLineDiff) => {

@@ -18,7 +18,7 @@ const _ = require('lodash');
  *   sha1: Hash;
  *   parents: Hash[];
  *   refs: Ref[];
- *   isHead: boolean;
+ *   isHead?: boolean;
  *   message: string;
  *   authorName?: string;
  *   authorEmail?: string;
@@ -49,7 +49,7 @@ const _ = require('lodash');
  *   additions?: number;
  *   deletions?: number;
  * }} FileStatus
- * @typedef {{ name: string; current?: boolean; sha1?: Hash }} Branch
+ * @typedef {{ name: string; current?: boolean; sha1?: Hash; remote?: string }} Branch
  * @typedef {{
  *   gitRootPath: string;
  *   type: 'inited' | 'uninited' | 'bare' | 'no-such-path';

@@ -50,20 +50,25 @@ const normalizeError = (err) => {
 
 const splitMail = (signature) => {
   if (!signature) return [];
-  const match = /^([^<])*<?([^>]*)>?$/.exec(signature);
+  const match = /^([^<]*)<?([^>]*)>?$/.exec(signature);
   return match ? [match[1].trim(), match[2].trim()] : [];
 };
 
-const formatCommit = /** @type {nodegit.Commit} */ (c) => {
+/**
+ * @param {nodegit.Commit} c
+ * @param {nodegit.Oid}    hId
+ */
+const formatCommit = (c, hId) => {
   const [authorName, authorEmail] = splitMail(c.author().toString());
   const [committerName, committerEmail] = splitMail(c.author().toString());
   /** @type {gitParser.Commit} */
   const out = {
     sha1: c.sha(),
     parents: c.parents().map(String),
-    refs: [], // TODO cached refs on client, don't include here
-    isHead: false, // TODO cached refs on client, don't include here
+    refs: hId && hId.equal(c.id()) ? ['HEAD'] : [], // TODO cached refs on client, don't include here
     message: c.message(),
+    // TODO find out how to extract from rawHeader()
+    authorDate: c.date().toJSON(),
     commitDate: c.date().toJSON(),
     authorName,
     authorEmail,
@@ -212,6 +217,23 @@ class NGWrap {
     };
     return out;
   }
+
+  async log(limit = 500, skip, maxIter) {
+    const walker = this.r.createRevWalk();
+    walker.sorting(nodegit.Revwalk.SORT.TIME);
+    const head = await this.r.getHeadCommit();
+    if (skip) await walker.fastWalk(skip).catch(normalizeError);
+    else {
+      if (head) walker.push(head.id());
+      walker.pushGlob('*');
+    }
+    const commits = await walker.getCommits(limit).catch(normalizeError);
+    // TODO detect head client-side
+    const headId = head && head.id();
+    const result = commits.map((c) => formatCommit(c, headId));
+    // TODO keep the walker as a cursor, time out and recreate if needed
+    return result;
+  }
 }
 
 const repoPs = {};
@@ -253,6 +275,7 @@ const initGit = (path, isBare) =>
   nodegit.Repository.init(path, isBare ? 1 : 0).catch(normalizeError);
 
 module.exports = {
+  NGWrap,
   getRepo,
   initGit,
   quickStatus,

@@ -174,13 +174,15 @@ exports.registerApi = (env) => {
       });
   };
 
-  const w = (fn) => (req, res) =>
+  /** @typedef {{ repo?: import('./nodegit').NGWrap; body: any; params: any; query: any }} Req */
+
+  const w = (/** @type {(req:Req, res:any) => any} */ fn) => (req, res) =>
     new Promise((resolve) => resolve(fn(req, res))).catch((err) => {
       winston.warn('Responding with ERROR: ', err);
       res.status(500).json(err);
     });
 
-  const jw = (fn) => (req, res) =>
+  const jw = (/** @type {(req:Req, res:any) => any} */ fn) => (req, res) =>
     jsonResultOrFailProm(res, new Promise((resolve) => resolve(fn(req))));
 
   const credentialsOption = (socketId, remote) => {
@@ -415,26 +417,26 @@ exports.registerApi = (env) => {
     `${exports.pathPrefix}/gitlog`,
     ensureAuthenticated,
     ensurePathExists,
-    jw((req) => {
+    jw(async (req) => {
       const limit = getNumber(req.query.limit, config.numberOfNodesPerLoad || 25);
       // TODO if skip is 0, return all references (max 20 most recent) and 100 commits of current + 10 of each reference
       // TODO ask for more not via skip but via oid
       const skip = getNumber(req.query.skip, 0);
-      return gitPromise
-        .log(req.query.path, limit, skip, config.maxActiveBranchSearchIteration)
-        .catch((err) => {
-          if (err.stderr && err.stderr.indexOf("fatal: bad default revision 'HEAD'") == 0) {
-            return { limit: limit, skip: skip, nodes: [] };
-          } else if (
-            /fatal: your current branch '.+' does not have any commits yet.*/.test(err.stderr)
-          ) {
-            return { limit: limit, skip: skip, nodes: [] };
-          } else if (err.stderr && err.stderr.indexOf('fatal: Not a git repository') == 0) {
-            return { limit: limit, skip: skip, nodes: [] };
-          } else {
-            throw err;
-          }
-        });
+      const nodes = await req.repo.log(limit, skip, config.maxActiveBranchSearchIteration);
+      // .catch((err) => {
+      //   if (err.stderr && err.stderr.indexOf("fatal: bad default revision 'HEAD'") == 0) {
+      //     return { limit: limit, skip: skip, nodes: [] };
+      //   } else if (
+      //     /fatal: your current branch '.+' does not have any commits yet.*/.test(err.stderr)
+      //   ) {
+      //     return { limit: limit, skip: skip, nodes: [] };
+      //   } else if (err.stderr && err.stderr.indexOf('fatal: Not a git repository') == 0) {
+      //     return { limit: limit, skip: skip, nodes: [] };
+      //   } else {
+      //     throw err;
+      //   }
+      // });
+      return { limit, skip, nodes, isHeadExist: true };
     })
   );
 
