@@ -338,7 +338,7 @@ class GraphViewModel {
 
   checkHeadMove(toNode) {
     if (this.HEAD() === toNode) {
-      this.HEADref.node(toNode);
+      this.HEADref().node(toNode);
     }
   }
 }
