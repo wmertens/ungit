@@ -190,8 +190,13 @@ class NGWrap {
     const files = {};
     for (const f of await r.getStatusExt()) {
       const fileName = f.path();
-      const diff = f.indexToWorkdir();
-      const oldFileName = diff.oldFile().path();
+      let oldFileName;
+      if (!f.isNew()) {
+        const diff = f.indexToWorkdir();
+        oldFileName = diff.oldFile().path();
+      } else {
+        oldFileName = fileName;
+      }
       const displayName = f.isRenamed() ? `${oldFileName} → ${fileName}` : fileName;
       files[fileName] = {
         fileName,
