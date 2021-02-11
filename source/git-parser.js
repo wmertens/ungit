@@ -3,7 +3,7 @@ const fileType = require('./utils/file-type.js');
 const _ = require('lodash');
 
 /**
- * @typedef {string} Ref
+ * @typedef {string} RefName
  * @typedef {string} Hash
  * @typedef {string} FileName
  * @typedef {{
@@ -17,7 +17,7 @@ const _ = require('lodash');
  * @typedef {{
  *   sha1: Hash;
  *   parents: Hash[];
- *   refs: Ref[];
+ *   refs: RefName[];
  *   isHead?: boolean;
  *   message: string;
  *   authorName?: string;
@@ -49,7 +49,7 @@ const _ = require('lodash');
  *   additions?: number;
  *   deletions?: number;
  * }} FileStatus
- * @typedef {{ name: string; current?: boolean; sha1?: Hash; remote?: string }} Branch
+ * @typedef {{ name: RefName; current?: boolean; sha1?: Hash; remote?: string }} Ref
  * @typedef {{
  *   gitRootPath: string;
  *   type: 'inited' | 'uninited' | 'bare' | 'no-such-path';
@@ -300,7 +300,7 @@ exports.parseGitConfig = (/** @type {string} */ text) => {
 };
 
 exports.parseGitBranches = (/** @type {string} */ text) => {
-  /** @type {Branch[]} */
+  /** @type {Ref[]} */
   const branches = [];
   text.split('\n').forEach((row) => {
     if (row.trim() == '') return;
@@ -326,7 +326,7 @@ exports.parseGitLsRemote = (/** @type {string} */ text) =>
     .map((line) => {
       const sha1 = line.slice(0, 40);
       const name = line.slice(41).trim();
-      return /** @type {Branch} */ ({ sha1: sha1, name: name });
+      return /** @type {Ref} */ ({ sha1: sha1, name: name });
     });
 
 exports.parseGitStashShow = (/** @type {string} */ text) => {

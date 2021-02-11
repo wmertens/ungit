@@ -1,4 +1,3 @@
-const sysPath = require('path');
 const nodegit = require('nodegit');
 const gitParser = require('./git-parser');
 const fileType = require('./utils/file-type.js');
@@ -89,7 +88,8 @@ const getFileStats = async (c) => {
     const stats = patch.lineStats();
     const oldFileName = patch.oldFile().path();
     const displayName = patch.newFile().path();
-    return /** @type {gitParser.FileStatus} */ ({
+    /** @type {gitParser.FileStatus} */
+    const status = {
       additions: stats.total_additions,
       deletions: stats.total_deletions,
       fileName: displayName,
@@ -97,7 +97,8 @@ const getFileStats = async (c) => {
       displayName,
       // TODO figure out how to get this
       type: fileType(displayName),
-    });
+    };
+    return status;
   });
 };
 
@@ -238,6 +239,19 @@ class NGWrap {
     const result = commits.map((c) => formatCommit(c, headId));
     // TODO keep the walker as a cursor, time out and recreate if needed
     return result;
+  }
+
+  async refs() {
+    // TODO need to make this smart for many tags
+    const refs = await this.r.getReferences();
+    /** @type {gitParser.Ref[]} */
+    const out = await Promise.all(
+      refs.map(async (ref) => ({
+        name: ref.name(),
+        sha1: `${ref.isTag() ? (await ref.peel(1)).id() : ref.target()}`,
+      }))
+    );
+    return out;
   }
 }
 

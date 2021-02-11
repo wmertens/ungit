@@ -183,7 +183,7 @@ exports.registerApi = (env) => {
     });
 
   const jw = (/** @type {(req:Req, res:any) => any} */ fn) => (req, res) =>
-    jsonResultOrFailProm(res, new Promise((resolve) => resolve(fn(req))));
+    jsonResultOrFailProm(res, new Promise((resolve) => resolve(fn(req, res))));
 
   const credentialsOption = (socketId, remote) => {
     let portAndRootPath = `${config.port}`;
@@ -475,13 +475,15 @@ exports.registerApi = (env) => {
     )
   );
 
-  app.get(`${exports.pathPrefix}/refs`, ensureAuthenticated, ensurePathExists, (req, res) => {
-    if (res.setTimeout) res.setTimeout(tenMinTimeoutMs);
+  app.get(
+    `${exports.pathPrefix}/refs`,
+    ensureAuthenticated,
+    ensurePathExists,
+    jw(async (req, res) => {
+      if (res.setTimeout) res.setTimeout(tenMinTimeoutMs);
 
-    let task = Promise.resolve();
-    if (req.query.remoteFetch) {
-      task = task.then(() =>
-        gitPromise(['remote'], req.query.path).then((remoteText) => {
+      if (req.query.remoteFetch)
+        await gitPromise(['remote'], req.query.path).then((remoteText) => {
           const remotes = remoteText.trim().split('\n');
 
           // making calls serially as credential helpers may get confused to which cred to get.
@@ -495,39 +497,11 @@ exports.registerApi = (env) => {
               }).catch((e) => winston.warn('err during remote fetch for /refs', e)); // ignore fetch err as it is most likely credential
             });
           }, Promise.resolve());
-        })
-      );
-    }
-    task = task
-      .then(() => gitPromise(['show-ref', '-d'], req.query.path))
-      // On new fresh repos, empty string is returned but has status code of error, simply ignoring them
-      .catch((e) => {
-        if (e.message !== '') throw e;
-      })
-      .then((refs) => {
-        const results = [];
-        if (refs) {
-          refs
-            .trim()
-            .split('\n')
-            .forEach((n) => {
-              const splitted = n.split(' ');
-              const sha1 = splitted[0];
-              const name = splitted[1];
-              if (name.indexOf('refs/tags') > -1 && name.indexOf('^{}') > -1) {
-                results[results.length - 1].sha1 = sha1;
-              } else {
-                results.push({
-                  name: name,
-                  sha1: sha1,
-                });
-              }
-            });
-        }
-        return results;
-      });
-    jsonResultOrFailProm(res, task);
-  });
+        });
+
+      return req.repo.refs();
+    })
+  );
 
   app.get(
     `${exports.pathPrefix}/branches`,
