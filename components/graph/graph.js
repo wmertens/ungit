@@ -274,9 +274,13 @@ class GraphViewModel {
 
   onProgramEvent(event) {
     if (event.event == 'git-directory-changed') {
+      this.skip(0);
+      this.logNodes = [];
       this.loadNodesFromApiThrottled();
       this.updateBranchesThrottled();
     } else if (event.event == 'request-app-content-refresh') {
+      this.skip(0);
+      this.logNodes = [];
       this.loadNodesFromApiThrottled();
     } else if (event.event == 'remote-tags-update') {
       this.setRemoteTags(event.tags);
