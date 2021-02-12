@@ -60,17 +60,9 @@ class BranchesViewModel {
     forceRemoteFetch = forceRemoteFetch || this.shouldAutoFetch || '';
 
     const currentBranchProm = this.server
-      .getPromise('/branches', { path: this.repoPath() })
-      .then((branches) =>
-        branches.forEach((b) => {
-          if (b.current) {
-            this.current(b.name);
-          }
-        })
-      )
-      .catch((err) => {
-        this.current('~error');
-      });
+      .getPromise('/checkout', { path: this.repoPath() })
+      .then((branch) => this.current(branch))
+      .catch((err) => this.current('~error'));
 
     // refreshes tags branches and remote branches
     const refsProm = this.server
