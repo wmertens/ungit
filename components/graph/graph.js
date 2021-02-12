@@ -19,6 +19,7 @@ class GraphViewModel {
     this.server = server;
     this.currentRemote = ko.observable();
     this.nodes = ko.observableArray();
+    this.logNodes = [];
     this.edges = ko.observableArray();
     this.refs = ko.observableArray();
     this.nodesById = {};
@@ -55,7 +56,7 @@ class GraphViewModel {
       true
     );
     this.commitOpacity = ko.observable(1.0);
-    this.heighstBranchOrder = 0;
+    this.highestBranchOrder = 0;
     this.hoverGraphActionGraphic = ko.observable();
     this.hoverGraphActionGraphic.subscribe(
       (value) => {
@@ -108,49 +109,48 @@ class GraphViewModel {
     return refViewModel;
   }
 
-  loadNodesFromApi() {
+  async loadNodesFromApi() {
     const nodeSize = this.nodes().length;
-
-    return this.server
-      .getPromise('/gitlog', { path: this.repoPath(), limit: this.limit(), skip: this.skip() })
-      .then((log) => {
-        // set new limit and skip
-        this.limit(parseInt(log.limit));
-        this.skip(parseInt(log.skip));
-        return log.nodes || [];
-      })
-      .then((
-        nodes // create and/or calculate nodes
-      ) =>
-        this.computeNode(
-          nodes.map((logEntry) => {
-            return this.getNode(logEntry.sha1, logEntry); // convert to node object
-          })
-        )
-      )
-      .then((nodes) => {
-        // create edges
-        const edges = [];
-        nodes.forEach((node) => {
-          node.parents().forEach((parentSha1) => {
-            edges.push(this.getEdge(node.sha1, parentSha1));
-          });
-          node.render();
-        });
-
-        this.edges(edges);
-        this.nodes(nodes);
-        if (nodes.length > 0) {
-          this.graphHeight(nodes[nodes.length - 1].cy() + 80);
-        }
-        this.graphWidth(1000 + this.heighstBranchOrder * 90);
-      })
-      .catch((e) => this.server.unhandledRejection(e))
-      .finally(() => {
-        if (window.innerHeight - this.graphHeight() > 0 && nodeSize != this.nodes().length) {
-          this.scrolledToEnd();
-        }
+    try {
+      const log = await this.server.getPromise('/gitlog', {
+        path: this.repoPath(),
+        limit: this.limit(),
+        skip: this.skip(),
       });
+
+      const { logNodes } = this;
+      this.logNodes = [...logNodes, ...(log.nodes || [])];
+
+      // set new limit and skip
+      this.skip(parseInt(log.skip));
+      const nodes = await this.computeNode(
+        this.logNodes.map(
+          (logEntry) => this.getNode(logEntry.sha1, logEntry) // convert to node object
+        )
+      );
+
+      // create edges
+      const edges = [];
+      nodes.forEach((node) => {
+        node.parents().forEach((parentSha1) => {
+          edges.push(this.getEdge(node.sha1, parentSha1));
+        });
+        node.render();
+      });
+
+      this.edges(edges);
+      this.nodes(nodes);
+      if (nodes.length > 0) {
+        this.graphHeight(nodes[nodes.length - 1].cy() + 80);
+      }
+      this.graphWidth(1000 + this.highestBranchOrder * 90);
+    } catch (e) {
+      this.server.unhandledRejection(e);
+    } finally {
+      if (window.innerHeight - this.graphHeight() > 0 && nodeSize != this.nodes().length) {
+        this.scrolledToEnd();
+      }
+    }
   }
 
   traverseNodeLeftParents(node, callback) {
@@ -164,7 +164,7 @@ class GraphViewModel {
   computeNode(nodes) {
     nodes = nodes || this.nodes();
 
-    this.markNodesIdeologicalBranches(this.refs(), nodes, this.nodesById);
+    this.markNodesIdeologicalBranches(this.refs());
 
     const updateTimeStamp = moment().valueOf();
     if (this.HEAD()) {
@@ -197,7 +197,7 @@ class GraphViewModel {
       node.branchOrder(ideologicalBranch.branchOrder);
     }
 
-    this.heighstBranchOrder = branchSlotCounter - 1;
+    this.highestBranchOrder = branchSlotCounter - 1;
     let prevNode;
     nodes.forEach((node) => {
       node.ancestorOfHEAD(node.ancestorOfHEADTimeStamp == updateTimeStamp);
@@ -219,7 +219,7 @@ class GraphViewModel {
     return edge;
   }
 
-  markNodesIdeologicalBranches(refs, nodes, nodesById) {
+  markNodesIdeologicalBranches(refs) {
     refs = refs.filter((r) => !!r.node());
     refs = refs.sort((a, b) => {
       if (a.isLocal && !b.isLocal) return -1;

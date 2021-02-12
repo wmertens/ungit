@@ -42,7 +42,7 @@ const nodegitErrors = {
   '-35': 'GIT_EAPPLYFAIL', // Patch application failed
 };
 const normalizeError = (err) => {
-  console.error('normalizing', err);
+  // console.error('normalizing', err);
   if (!err.errorCode && err.errno) err.errorCode = nodegitErrors[err.errno];
   throw err;
 };
@@ -228,11 +228,9 @@ class NGWrap {
     const walker = this.r.createRevWalk();
     walker.sorting(nodegit.Revwalk.SORT.TIME);
     const head = await this.r.getHeadCommit();
+    if (head) walker.push(head.id());
+    walker.pushGlob('*');
     if (skip) await walker.fastWalk(skip).catch(normalizeError);
-    else {
-      if (head) walker.push(head.id());
-      walker.pushGlob('*');
-    }
     const commits = await walker.getCommits(limit).catch(normalizeError);
     // TODO detect head client-side
     const headId = head && head.id();
@@ -251,6 +249,62 @@ class NGWrap {
         sha1: `${ref.isTag() ? (await ref.peel(1)).id() : ref.target()}`,
       }))
     );
+    return out;
+  }
+
+  async getCurrentBranch() {
+    const ref = await this.r.getCurrentBranch();
+    return ref.shorthand();
+  }
+
+  async getHead() {
+    const head = await this.r.getHeadCommit();
+    return formatCommit(head, head.id());
+  }
+
+  /**
+   * @param {string}              remoteName
+   * @param {gitParser.RefName[]} [refs]
+   * @param {boolean}             [prune]
+   */
+  async remoteFetch(remoteName, refs = null, prune) {
+    const remote = await this.r.getRemote(remoteName);
+    // TODO use credentialshelper
+    await remote.fetch(refs, {
+      callbacks: {
+        credentials: (url, userName) => nodegit.Cred.sshKeyFromAgent(userName),
+        prune: prune ? nodegit.Fetch.PRUNE.GIT_FETCH_PRUNE : undefined,
+      },
+    });
+  }
+
+  async remoteAllFetch() {
+    const remotes = await this.getRemotes();
+    // making calls serially as credential helpers may get confused to which cred to get.
+    for (const name of remotes) {
+      await this.remoteFetch(name);
+    }
+  }
+
+  // TODO not sure if we should have this
+  async remoteFetchTags(remoteName) {
+    const remote = await this.r.getRemote(remoteName);
+    // TODO use credentialshelper
+    await remote.connect(nodegit.Enums.DIRECTION.FETCH, {
+      credentials: (url, userName) => nodegit.Cred.sshKeyFromAgent(userName),
+    });
+    const refs = await remote.referenceList();
+    await remote.disconnect();
+    /** @type {gitParser.Ref[]} */
+    const out = [];
+    for (const t of refs) {
+      const name = t.name();
+      if (!name.startsWith('/refs/tags/')) continue;
+      const sha1 = t.oid().toString();
+      const ref = { name, sha1, remote: remoteName };
+      if (name.endsWith('{}')) out[out.length - 1] = ref;
+      else out.push(ref);
+    }
     return out;
   }
 }
