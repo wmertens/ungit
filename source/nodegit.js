@@ -233,7 +233,45 @@ class NGWrap {
     const commits = await walker.getCommits(limit).catch(normalizeError);
     // TODO detect head client-side
     const headId = head && head.id();
-    const result = commits.map((c) => formatCommit(c, headId));
+    // TODO move everything except formatCommit to details call
+    const result = await Promise.all(
+      commits.map(async (c) => {
+        const out = formatCommit(c, headId);
+        out.additions = 0;
+        out.deletions = 0;
+        out.fileLineDiffs = [];
+
+        const diffs = await c.getDiff();
+        // One diff per parent
+        for (const diff of diffs) {
+          const stat = await diff.getStats();
+          out.additions += stat.insertions();
+          out.deletions += stat.deletions();
+
+          const patches = await diff.patches();
+          // TODO probably need to aggregate by file path
+          out.fileLineDiffs.push(
+            ...patches.map((p) => {
+              const fileName = !p.isDeleted() && p.newFile().path();
+              const oldFileName = !p.isAdded() && p.oldFile().path();
+              const displayName = p.isRenamed() ? `${oldFileName} → ${fileName}` : fileName;
+              const { total_additions, total_deletions } = p.lineStats();
+              /** @type{DiffStat} */
+              const fileStat = {
+                oldFileName,
+                fileName,
+                displayName,
+                additions: total_additions,
+                deletions: total_deletions,
+                type: fileType(fileName || oldFileName),
+              };
+              return fileStat;
+            })
+          );
+        }
+        return out;
+      })
+    );
     // TODO keep the walker as a cursor, time out and recreate if needed
     return result;
   }
