@@ -7,8 +7,6 @@ const filesToDisplayIncrmentBy = 50;
 const filesToDisplayLimit = filesToDisplayIncrmentBy;
 const mergeTool = ungit.config.mergeTool;
 
-/** @typedef {import('../../source/git-parser').GitStatus} GitStatus */
-
 components.register(
   'staging',
   (args) => new StagingViewModel(args.server, args.repoPath, args.graph)

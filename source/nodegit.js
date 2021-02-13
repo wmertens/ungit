@@ -1,5 +1,4 @@
 const nodegit = require('nodegit');
-const gitParser = require('./git-parser');
 const fileType = require('./utils/file-type.js');
 
 // from libgit2/include/git2/errors.h
@@ -60,7 +59,7 @@ const splitMail = (signature) => {
 const formatCommit = (c, hId) => {
   const [authorName, authorEmail] = splitMail(c.author().toString());
   const [committerName, committerEmail] = splitMail(c.author().toString());
-  /** @type {gitParser.Commit} */
+  /** @type {Commit} */
   const out = {
     sha1: c.sha(),
     parents: c.parents().map(String),
@@ -88,7 +87,7 @@ const getFileStats = async (c) => {
     const stats = patch.lineStats();
     const oldFileName = patch.oldFile().path();
     const displayName = patch.newFile().path();
-    /** @type {gitParser.FileStatus} */
+    /** @type {FileStatus} */
     const status = {
       additions: stats.total_additions,
       deletions: stats.total_deletions,
@@ -187,7 +186,7 @@ class NGWrap {
     const inMerge = r.isMerging();
     const inRebase = r.isRebasing();
     const inConflict = index.hasConflicts();
-    /** @type {Record<string, gitParser.FileStatus>} */
+    /** @type {Record<string, FileStatus>} */
     const files = {};
     for (const f of await r.getStatusExt()) {
       const fileName = f.path();
@@ -212,7 +211,7 @@ class NGWrap {
       };
     }
 
-    /** @type {gitParser.GitStatus} */
+    /** @type {GitStatus} */
     const out = {
       branch: branch && branch.shorthand(),
       inCherry,
@@ -242,7 +241,7 @@ class NGWrap {
   async refs() {
     // TODO need to make this smart for many tags
     const refs = await this.r.getReferences();
-    /** @type {gitParser.Ref[]} */
+    /** @type {Ref[]} */
     const out = await Promise.all(
       refs.map(async (ref) => ({
         name: ref.name(),
@@ -263,9 +262,9 @@ class NGWrap {
   }
 
   /**
-   * @param {string}              remoteName
-   * @param {gitParser.RefName[]} [refs]
-   * @param {boolean}             [prune]
+   * @param {string}    remoteName
+   * @param {RefName[]} [refs]
+   * @param {boolean}   [prune]
    */
   async remoteFetch(remoteName, refs = null, prune) {
     const remote = await this.r.getRemote(remoteName);
@@ -295,7 +294,7 @@ class NGWrap {
     });
     const refs = await remote.referenceList();
     await remote.disconnect();
-    /** @type {gitParser.Ref[]} */
+    /** @type {Ref[]} */
     const out = [];
     for (const t of refs) {
       const name = t.name();
@@ -328,7 +327,7 @@ const getRepo = async (path) => {
   return repoPs[path];
 };
 
-/** @returns {Promise<gitParser.QuickStatus>} */
+/** @returns {Promise<QuickStatus>} */
 const quickStatus = async (path) => {
   try {
     const repo = await getRepo(path);
