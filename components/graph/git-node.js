@@ -31,6 +31,7 @@ class GitNodeViewModel extends Animateable {
     });
 
     this.refs = ko.computed(() => {
+      // TODO this runs a lot
       const rs = this.branchesAndLocalTags().concat(this.remoteTags());
       rs.sort((a, b) => {
         if (b.current()) return 1;
@@ -161,9 +162,10 @@ class GitNodeViewModel extends Animateable {
     this.signatureMade(logEntry.signatureMade);
     this.signatureDate(logEntry.signatureDate);
 
-    (logEntry.refs || []).forEach((ref) => {
-      this.graph.getRef(ref).node(this);
-    });
+    const refs = this.graph.refsById[logEntry.sha1];
+    if (refs) {
+      refs.forEach((ref) => this.graph.getRef(ref).node(this));
+    }
     this.isInited = true;
   }
 

@@ -20,6 +20,7 @@ class GraphViewModel {
     this.currentRemote = ko.observable();
     this.nodes = ko.observableArray();
     this.logNodes = [];
+    this.refsById = {};
     this.edges = ko.observableArray();
     this.refs = ko.observableArray();
     this.nodesById = {};
@@ -77,8 +78,8 @@ class GraphViewModel {
 
     this.loadNodesFromApiThrottled = _.throttle(this.loadNodesFromApi.bind(this), 1000);
     this.updateBranchesThrottled = _.throttle(this.updateBranches.bind(this), 1000);
-    this.loadNodesFromApi();
     this.updateBranches();
+    this.loadNodesFromApi();
     this.graphWidth = ko.observable();
     this.graphHeight = ko.observable(800);
     this.searchIcon = octicons.search.toSVG({ height: 18 });

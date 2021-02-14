@@ -35,6 +35,9 @@ class BranchesViewModel {
     this.branchIcon = octicons['git-branch'].toSVG({ height: 18 });
     this.closeIcon = octicons.x.toSVG({ height: 18 });
     this.updateRefsDebounced = _.debounce(this.updateRefs, 500);
+    this.updateRefsDebounced();
+    this.updateRefsDebounced.flush();
+    this.fetchedRefs = false;
   }
 
   checkoutBranch(branch) {
@@ -58,6 +61,7 @@ class BranchesViewModel {
   }
   updateRefs(forceRemoteFetch) {
     forceRemoteFetch = forceRemoteFetch || this.shouldAutoFetch || '';
+    if (!this.fetchedRefs) forceRemoteFetch = '';
 
     const currentBranchProm = this.server
       .getPromise('/checkout', { path: this.repoPath() })
@@ -68,13 +72,27 @@ class BranchesViewModel {
     const refsProm = this.server
       .getPromise('/refs', { path: this.repoPath(), remoteFetch: forceRemoteFetch })
       .then((refs) => {
+        this.fetchedRefs = true;
         const version = Date.now();
+        const refsById = {};
+        this.graph.refsById = refsById;
         const sorted = refs
-          .map((r) => {
-            const ref = this.graph.getRef(r.name.replace('refs/tags', 'tag: refs/tags'));
-            ref.node(this.graph.getNode(r.sha1));
+          .map(({ name, sha1 }) => {
+            const ref = this.graph.getRef(name.replace('refs/tags', 'tag: refs/tags'));
+            if (!refsById[sha1]) refsById[sha1] = [];
+            refsById[sha1].push(name);
+            // !!! side effect: registers the node
+            ref.node(this.graph.getNode(sha1));
             ref.version = version;
             return ref;
+          })
+          .filter((ref) => {
+            if (ref.localRefName == 'refs/stash') return false;
+            if (ref.localRefName.endsWith('/HEAD')) return false;
+            if (!this.isShowRemote() && ref.isRemote) return false;
+            if (!this.isShowBranch() && ref.isBranch) return false;
+            if (!this.isShowTag() && ref.isTag) return false;
+            return true;
           })
           .sort((a, b) => {
             if (a.current() || b.current()) {
@@ -90,14 +108,6 @@ class BranchesViewModel {
             } else {
               return a.isRemoteBranch ? 1 : -1;
             }
-          })
-          .filter((ref) => {
-            if (ref.localRefName == 'refs/stash') return false;
-            if (ref.localRefName.endsWith('/HEAD')) return false;
-            if (!this.isShowRemote() && ref.isRemote) return false;
-            if (!this.isShowBranch() && ref.isBranch) return false;
-            if (!this.isShowTag() && ref.isTag) return false;
-            return true;
           });
         this.branchesAndLocalTags(sorted);
         this.graph.refs().forEach((ref) => {
