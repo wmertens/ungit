@@ -76,29 +76,44 @@ const formatCommit = (c, hId) => {
   return out;
 };
 
-/** @param {nodegit.Commit} c */
-const getFileStats = async (c) => {
-  const diffList = await c.getDiff();
-  // Each diff has the entire patch set for some reason
-  const patches = await (diffList[0] && diffList[0].patches());
-  if (!(patches && patches.length)) return [];
+/**
+ * @param {nodegit.Commit} c
+ * @param {boolean}        [isStash]  Stashes only have valid diff in first patch.
+ */
+const getFileStats = async (c, isStash) => {
+  const out = { additions: 0, deletions: 0, fileLineDiffs: [] };
+  let diffs = await c.getDiff();
+  if (isStash) diffs = diffs.slice(0, 1);
+  // One diff per parent
+  for (const diff of diffs) {
+    const stat = await diff.getStats();
+    // Stashes have 0-change diffs with the whole repo as a patch
+    if (stat.filesChanged() === 0) continue;
+    out.additions += stat.insertions();
+    out.deletions += stat.deletions();
 
-  return patches.map((patch) => {
-    const stats = patch.lineStats();
-    const oldFileName = patch.oldFile().path();
-    const displayName = patch.newFile().path();
-    /** @type {FileStatus} */
-    const status = {
-      additions: stats.total_additions,
-      deletions: stats.total_deletions,
-      fileName: displayName,
-      oldFileName,
-      displayName,
-      // TODO figure out how to get this
-      type: fileType(displayName),
-    };
-    return status;
-  });
+    const patches = await diff.patches();
+    // TODO probably need to aggregate by file path
+    out.fileLineDiffs.push(
+      ...patches.map((p) => {
+        const fileName = !p.isDeleted() && p.newFile().path();
+        const oldFileName = !p.isAdded() && p.oldFile().path();
+        const displayName = p.isRenamed() ? `${oldFileName} → ${fileName}` : fileName;
+        const { total_additions, total_deletions } = p.lineStats();
+        /** @type{DiffStat} */
+        const fileStat = {
+          oldFileName,
+          fileName,
+          displayName,
+          additions: total_additions,
+          deletions: total_deletions,
+          type: fileType(fileName || oldFileName),
+        };
+        return fileStat;
+      })
+    );
+  }
+  return out;
 };
 
 class NGWrap {
@@ -164,12 +179,13 @@ class NGWrap {
       oids.push(oid);
     }).catch(normalizeError);
     const stashes = await Promise.all(oids.map((oid) => this.r.getCommit(oid)));
+    /** @type {Commit[]} */
     return Promise.all(
       stashes.map(async (stash, index) => ({
+        ...(await getFileStats(stash, true)),
         ...formatCommit(stash),
         reflogId: `${index}`,
         reflogName: `stash@{${index}}`,
-        fileLineDiffs: await getFileStats(stash),
       }))
     );
   }
@@ -212,7 +228,7 @@ class NGWrap {
     }
 
     /** @type {GitStatus} */
-    const out = {
+    return {
       branch: branch && branch.shorthand(),
       inCherry,
       inMerge,
@@ -220,10 +236,10 @@ class NGWrap {
       inConflict,
       files,
     };
-    return out;
   }
 
-  async log(limit = 500, skip, maxIter) {
+  // TODO accept SHAs to walk
+  async log(limit = 500, skip) {
     const walker = this.r.createRevWalk();
     walker.sorting(nodegit.Revwalk.SORT.TIME);
     const head = await this.r.getHeadCommit();
@@ -233,46 +249,11 @@ class NGWrap {
     const commits = await walker.getCommits(limit).catch(normalizeError);
     // TODO detect head client-side
     const headId = head && head.id();
-    // TODO move everything except formatCommit to details call
+    // TODO only keep formatCommit, the stats are for a details call
+    /** @type {Commit[]} */
     const result = await Promise.all(
-      commits.map(async (c) => {
-        const out = formatCommit(c, headId);
-        out.additions = 0;
-        out.deletions = 0;
-        out.fileLineDiffs = [];
-
-        const diffs = await c.getDiff();
-        // One diff per parent
-        for (const diff of diffs) {
-          const stat = await diff.getStats();
-          out.additions += stat.insertions();
-          out.deletions += stat.deletions();
-
-          const patches = await diff.patches();
-          // TODO probably need to aggregate by file path
-          out.fileLineDiffs.push(
-            ...patches.map((p) => {
-              const fileName = !p.isDeleted() && p.newFile().path();
-              const oldFileName = !p.isAdded() && p.oldFile().path();
-              const displayName = p.isRenamed() ? `${oldFileName} → ${fileName}` : fileName;
-              const { total_additions, total_deletions } = p.lineStats();
-              /** @type{DiffStat} */
-              const fileStat = {
-                oldFileName,
-                fileName,
-                displayName,
-                additions: total_additions,
-                deletions: total_deletions,
-                type: fileType(fileName || oldFileName),
-              };
-              return fileStat;
-            })
-          );
-        }
-        return out;
-      })
+      commits.map(async (c) => ({ ...(await getFileStats(c)), ...formatCommit(c, headId) }))
     );
-    // TODO keep the walker as a cursor, time out and recreate if needed
     return result;
   }
 
