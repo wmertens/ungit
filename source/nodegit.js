@@ -76,14 +76,10 @@ const formatCommit = (c, hId) => {
   return out;
 };
 
-/**
- * @param {nodegit.Commit} c
- * @param {boolean}        [isStash]  Stashes only have valid diff in first patch.
- */
+/** @param {nodegit.Commit} c */
 const getFileStats = async (c, isStash) => {
   const out = { additions: 0, deletions: 0, fileLineDiffs: [] };
-  let diffs = await c.getDiff();
-  if (isStash) diffs = diffs.slice(0, 1);
+  const diffs = await c.getDiff();
   // One diff per parent
   for (const diff of diffs) {
     const stat = await diff.getStats();
@@ -96,8 +92,8 @@ const getFileStats = async (c, isStash) => {
     // TODO probably need to aggregate by file path
     out.fileLineDiffs.push(
       ...patches.map((p) => {
-        const fileName = !p.isDeleted() && p.newFile().path();
-        const oldFileName = !p.isAdded() && p.oldFile().path();
+        const fileName = p.isDeleted() ? p.oldFile().path() : p.newFile().path();
+        const oldFileName = p.isAdded() ? fileName : p.oldFile().path();
         const displayName = p.isRenamed() ? `${oldFileName} → ${fileName}` : fileName;
         const { total_additions, total_deletions } = p.lineStats();
         /** @type{DiffStat} */
@@ -123,13 +119,18 @@ class NGWrap {
   }
 
   async addStash(message) {
-    const signature = await this.r.defaultSignature();
-    return nodegit.Stash.save(
+    /** @type {Hash} */
+    const oid = await nodegit.Stash.save(
       this.r,
-      signature,
+      await this.r.defaultSignature(),
       message,
       nodegit.Stash.FLAGS.INCLUDE_UNTRACKED
-    ).catch(normalizeError);
+    ).catch((err) => {
+      // no changes
+      if (err.errno === -3) return null;
+      normalizeError(err);
+    });
+    return oid;
   }
 
   async deleteStash(index) {
@@ -178,11 +179,13 @@ class NGWrap {
     await nodegit.Stash.foreach(this.r, (index, message, oid) => {
       oids.push(oid);
     }).catch(normalizeError);
-    const stashes = await Promise.all(oids.map((oid) => this.r.getCommit(oid)));
+    const stashes = await Promise.all(
+      oids.map((oid) => this.r.getCommit(oid).catch(normalizeError))
+    );
     /** @type {Commit[]} */
     return Promise.all(
       stashes.map(async (stash, index) => ({
-        ...(await getFileStats(stash, true)),
+        ...(await getFileStats(stash)),
         ...formatCommit(stash),
         reflogId: `${index}`,
         reflogName: `stash@{${index}}`,
@@ -242,7 +245,7 @@ class NGWrap {
   async log(limit = 500, skip) {
     const walker = this.r.createRevWalk();
     walker.sorting(nodegit.Revwalk.SORT.TIME);
-    const head = await this.r.getHeadCommit();
+    const head = await this.r.getHeadCommit().catch(normalizeError);
     if (head) walker.push(head.id());
     walker.pushGlob('*');
     if (skip) await walker.fastWalk(skip).catch(normalizeError);
@@ -259,7 +262,7 @@ class NGWrap {
 
   async refs() {
     // TODO need to make this smart for many tags
-    const refs = await this.r.getReferences();
+    const refs = await this.r.getReferences().catch(normalizeError);
     /** @type {Ref[]} */
     const out = await Promise.all(
       refs.map(async (ref) => ({
@@ -271,12 +274,12 @@ class NGWrap {
   }
 
   async getCurrentBranch() {
-    const ref = await this.r.getCurrentBranch();
+    const ref = await this.r.getCurrentBranch().catch(normalizeError);
     return ref.shorthand();
   }
 
   async getHead() {
-    const head = await this.r.getHeadCommit();
+    const head = await this.r.getHeadCommit().catch(normalizeError);
     return formatCommit(head, head.id());
   }
 
@@ -286,7 +289,7 @@ class NGWrap {
    * @param {boolean}   [prune]
    */
   async remoteFetch(remoteName, refs = null, prune) {
-    const remote = await this.r.getRemote(remoteName);
+    const remote = await this.r.getRemote(remoteName).catch(normalizeError);
     // TODO use credentialshelper
     await remote.fetch(refs, {
       callbacks: {
@@ -306,7 +309,7 @@ class NGWrap {
 
   // TODO not sure if we should have this
   async remoteFetchTags(remoteName) {
-    const remote = await this.r.getRemote(remoteName);
+    const remote = await this.r.getRemote(remoteName).catch(normalizeError);
     // TODO use credentialshelper
     await remote.connect(nodegit.Enums.DIRECTION.FETCH, {
       credentials: (url, userName) => nodegit.Cred.sshKeyFromAgent(userName),

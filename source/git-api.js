@@ -321,16 +321,10 @@ exports.registerApi = (env) => {
   );
 
   app.get(`${exports.pathPrefix}/diff`, ensureAuthenticated, ensurePathExists, (req, res) => {
-    const isIgnoreWhiteSpace = req.query.whiteSpace === 'true' ? true : false;
+    const { path, file, oldFile, sha1, whiteSpace } = req.query;
     jsonResultOrFailProm(
       res,
-      gitPromise.diffFile(
-        req.query.path,
-        req.query.file,
-        req.query.oldFile,
-        req.query.sha1,
-        isIgnoreWhiteSpace
-      )
+      gitPromise.diffFile(path, file || oldFile, oldFile || file, sha1, whiteSpace === 'true')
     );
   });
 
