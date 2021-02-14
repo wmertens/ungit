@@ -324,7 +324,9 @@ exports.registerApi = (env) => {
     const { path, file, oldFile, sha1, whiteSpace } = req.query;
     jsonResultOrFailProm(
       res,
-      gitPromise.diffFile(path, file || oldFile, oldFile || file, sha1, whiteSpace === 'true')
+      sha1
+        ? req.repo.diffFile(file || oldFile, oldFile || file, sha1, whiteSpace === 'true')
+        : gitPromise.diffFile(path, file || oldFile, oldFile || file, sha1, whiteSpace === 'true')
     );
   });
 

@@ -328,6 +328,35 @@ class NGWrap {
     }
     return out;
   }
+
+  async diffFile(filename, oldFilename, sha1, ignoreWhiteSpace) {
+    let diffs;
+    if (sha1) {
+      const c = await this.r.getCommit(sha1).catch(normalizeError);
+      diffs = await c.getDiff();
+    } else {
+      throw 'not implemented yet';
+      // diffs=await
+    }
+    const text = [];
+    // TODO if no sha1 compare against HEAD
+    // TODO figure out how to show diffs for the same file with multiple parents
+    // TODO the original code handles root commits differently?
+    for (const diff of diffs)
+      for (const patch of await diff.patches())
+        if (patch.newFile().path() === filename || patch.oldFile().path())
+          for (const hunk of await patch.hunks()) {
+            const lines = await hunk.lines();
+            text.push(
+              `diff --git a/${patch.oldFile().path()} b/${patch.newFile().path()}`,
+              hunk.header().trim(),
+              ...lines.map(
+                (line) => `${String.fromCharCode(line.origin())}${line.content().trim()}`
+              )
+            );
+          }
+    return text.join('\n');
+  }
 }
 
 const repoPs = {};
