@@ -12,7 +12,7 @@ type DiffStat = {
 type Commit = {
   sha1: Hash;
   parents: Hash[];
-  refs: RefName[];
+  refs?: RefName[];
   isHead?: boolean;
   message: string;
   authorName?: string;

@@ -52,18 +52,14 @@ const splitMail = (signature) => {
   return match ? [match[1].trim(), match[2].trim()] : [];
 };
 
-/**
- * @param {nodegit.Commit} c
- * @param {nodegit.Oid}    hId
- */
-const formatCommit = (c, hId) => {
+/** @param {nodegit.Commit} c */
+const formatCommit = (c) => {
   const [authorName, authorEmail] = splitMail(c.author().toString());
   const [committerName, committerEmail] = splitMail(c.author().toString());
   /** @type {Commit} */
   const out = {
     sha1: c.sha(),
     parents: c.parents().map(String),
-    refs: hId && hId.equal(c.id()) ? ['HEAD'] : [], // TODO cached refs on client, don't include here
     message: c.message(),
     // TODO find out how to extract from rawHeader()
     authorDate: c.date().toJSON(),
@@ -250,12 +246,10 @@ class NGWrap {
     walker.pushGlob('*');
     if (skip) await walker.fastWalk(skip).catch(normalizeError);
     const commits = await walker.getCommits(limit).catch(normalizeError);
-    // TODO detect head client-side
-    const headId = head && head.id();
     // TODO only keep formatCommit, the stats are for a details call
     /** @type {Commit[]} */
     const result = await Promise.all(
-      commits.map(async (c) => ({ ...(await getFileStats(c)), ...formatCommit(c, headId) }))
+      commits.map(async (c) => ({ ...(await getFileStats(c)), ...formatCommit(c) }))
     );
     return result;
   }
@@ -270,6 +264,8 @@ class NGWrap {
         sha1: `${ref.isTag() ? (await ref.peel(1)).id() : ref.target()}`,
       }))
     );
+    const head = await this.r.getHeadCommit();
+    if (head) out.unshift({ name: 'HEAD', sha1: head.sha() });
     return out;
   }
 
@@ -280,7 +276,7 @@ class NGWrap {
 
   async getHead() {
     const head = await this.r.getHeadCommit().catch(normalizeError);
-    return formatCommit(head, head.id());
+    return formatCommit(head);
   }
 
   /**
