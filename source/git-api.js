@@ -401,28 +401,26 @@ exports.registerApi = (env) => {
   });
 
   app.get(
+    `${exports.pathPrefix}/commits`,
+    ensureAuthenticated,
+    ensurePathExists,
+    jw(async (req) => {
+      const limit = getNumber(req.query.limit, config.numberOfNodesPerLoad || 25);
+      const ids = (req.query.ids || '').split(',');
+      if (!ids.length) return [];
+      const nodes = await req.repo.log(limit, 0, ids);
+      return nodes;
+    })
+  );
+
+  app.get(
     `${exports.pathPrefix}/gitlog`,
     ensureAuthenticated,
     ensurePathExists,
     jw(async (req) => {
       const limit = getNumber(req.query.limit, config.numberOfNodesPerLoad || 25);
-      // TODO if skip is 0, return all references (max 20 most recent) and 100 commits of current + 10 of each reference
-      // TODO ask for more not via skip but via oid
       const skip = getNumber(req.query.skip, 0);
       const nodes = await req.repo.log(limit, skip, config.maxActiveBranchSearchIteration);
-      // .catch((err) => {
-      //   if (err.stderr && err.stderr.indexOf("fatal: bad default revision 'HEAD'") == 0) {
-      //     return { limit: limit, skip: skip, nodes: [] };
-      //   } else if (
-      //     /fatal: your current branch '.+' does not have any commits yet.*/.test(err.stderr)
-      //   ) {
-      //     return { limit: limit, skip: skip, nodes: [] };
-      //   } else if (err.stderr && err.stderr.indexOf('fatal: Not a git repository') == 0) {
-      //     return { limit: limit, skip: skip, nodes: [] };
-      //   } else {
-      //     throw err;
-      //   }
-      // });
       return { skip: skip + nodes.length, nodes, isHeadExist: true };
     })
   );

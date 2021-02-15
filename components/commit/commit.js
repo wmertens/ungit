@@ -10,6 +10,7 @@ class CommitViewModel {
   constructor(gitNode) {
     this.repoPath = gitNode.graph.repoPath;
     this.sha1 = gitNode.sha1;
+    this.isInited = ko.observable(false);
     this.server = gitNode.graph.server;
     this.highlighted = gitNode.highlighted;
     this.nodeIsMousehover = gitNode.nodeIsMousehover;
@@ -22,8 +23,7 @@ class CommitViewModel {
     this.message = ko.observable();
     this.title = ko.observable();
     this.body = ko.observable();
-    // TODO this is initialized with number but gets moment
-    this.authorDate = ko.observable(0);
+    this.authorDate = ko.observable(/** @type {moment.Moment} */ (null));
     this.authorDateFromNow = ko.observable();
     this.authorName = ko.observable();
     this.authorEmail = ko.observable();
@@ -62,7 +62,7 @@ class CommitViewModel {
     this.numberOfAddedLines(args.additions);
     this.numberOfRemovedLines(args.deletions);
     this.fileLineDiffs(args.fileLineDiffs);
-    this.isInited = true;
+    this.isInited(true);
     this.commitDiff = ko.observable(
       components.create('commitDiff', {
         fileLineDiffs: this.fileLineDiffs(),

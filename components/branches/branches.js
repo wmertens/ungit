@@ -37,7 +37,7 @@ class BranchesViewModel {
     this.updateRefsDebounced = _.debounce(this.updateRefs, 500);
     this.updateRefsDebounced();
     this.updateRefsDebounced.flush();
-    this.fetchedRefs = false;
+    this.firstFetch = true;
   }
 
   checkoutBranch(branch) {
@@ -61,7 +61,7 @@ class BranchesViewModel {
   }
   updateRefs(forceRemoteFetch) {
     forceRemoteFetch = forceRemoteFetch || this.shouldAutoFetch || '';
-    if (!this.fetchedRefs) forceRemoteFetch = '';
+    if (this.firstFetch) forceRemoteFetch = '';
 
     const currentBranchProm = this.server
       .getPromise('/checkout', { path: this.repoPath() })
@@ -69,25 +69,24 @@ class BranchesViewModel {
       .catch((err) => this.current('~error'));
 
     // refreshes tags branches and remote branches
+    // TODO refresh remote refs separately, notify autofetch via ws
     const refsProm = this.server
       .getPromise('/refs', { path: this.repoPath(), remoteFetch: forceRemoteFetch })
       .then((refs) => {
-        this.fetchedRefs = true;
-        const version = Date.now();
-        const refsById = {};
-        this.graph.refsById = refsById;
-        const sorted = refs
-          .map(({ name, sha1 }) => {
-            // !!! side effect: registers the ref
-            const ref = this.graph.getRef(name.replace('refs/tags', 'tag: refs/tags'));
-            if (!refsById[sha1]) refsById[sha1] = [];
-            refsById[sha1].push(name);
-            ref.version = version;
-            ref.sha1 = sha1;
-            return ref;
-          })
-          .filter(({ localRefName, isRemote, isBranch, isTag }) => {
-            if (
+        this.firstFetch = false;
+        const stamp = Date.now();
+        const locals = [];
+        for (const { name, sha1 } of refs) {
+          const lname = name.replace('refs/tags', 'tag: refs/tags');
+          // side effect: registers the ref
+          const ref = this.graph.getRef(lname);
+          ref.stamp = stamp;
+          ref.sha1 = sha1;
+          // side effect: registers the node
+          ref.node(this.graph.getNode(sha1));
+          const { localRefName, isRemote, isBranch, isTag } = ref;
+          if (
+            !(
               localRefName == 'refs/stash' ||
               // Remote HEAD
               localRefName.endsWith('/HEAD') ||
@@ -95,35 +94,29 @@ class BranchesViewModel {
               (isBranch && !this.isShowBranch()) ||
               (isTag && !this.isShowTag())
             )
-              return false;
-            return true;
-          })
-          .sort((a, b) => {
-            if (a.current() || b.current()) {
-              // Current branch is always first
-              return a.current() ? -1 : 1;
-            } else if (a.isRemoteBranch === b.isRemoteBranch) {
-              // Otherwise, sort by name, grouped by remoteness
-              return a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
-            } else {
-              // Remote branches show last
-              return a.isRemoteBranch ? 1 : -1;
-            }
-          });
-        for (const ref of sorted) {
-          // TODO showDanglingTags option
-          const isImportant = !(ref.isRemoteTag || ref.isLocalTag);
-          // These are the visible refs of the graph
-          ref.node(this.graph.getNode(ref.sha1, null, isImportant));
+          )
+            locals.push(ref);
         }
-        this.branchesAndLocalTags(sorted);
+        locals.sort((a, b) => {
+          if (a.current() || b.current()) {
+            // Current branch is always first
+            return a.current() ? -1 : 1;
+          } else if (a.isRemoteBranch !== b.isRemoteBranch) {
+            // Remote branches show last
+            return a.isRemoteBranch ? 1 : -1;
+          } else {
+            // Otherwise, sort by name, grouped by remoteness
+            return a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
+          }
+        });
+        this.branchesAndLocalTags(locals);
         this.graph.refs().forEach((ref) => {
           // ref was removed from another source
-          if (!ref.isRemoteTag && ref.value !== 'HEAD' && (!ref.version || ref.version < version)) {
+          if (!ref.isRemoteTag && ref.value !== 'HEAD' && ref.stamp !== stamp) {
             ref.remove(true);
           }
         });
-        this.graph.loadNodesFromApiThrottled();
+        this.graph.fetchCommits();
       })
       .catch((e) => this.server.unhandledRejection(e));
 

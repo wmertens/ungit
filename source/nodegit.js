@@ -207,7 +207,7 @@ class NGWrap {
       const fileName = f.path();
       let oldFileName;
       if (!f.isNew()) {
-        const diff = f.indexToWorkdir();
+        const diff = f.indexToWorkdir() || f.headToIndex();
         oldFileName = diff.oldFile().path();
       } else {
         oldFileName = fileName;
@@ -237,16 +237,19 @@ class NGWrap {
     };
   }
 
-  // TODO accept SHAs to walk
-  async log(limit = 500, skip) {
+  async log(limit = 25, skip, ids) {
     const walker = this.r.createRevWalk();
     walker.sorting(nodegit.Revwalk.SORT.TIME);
-    const head = await this.r.getHeadCommit().catch(normalizeError);
-    if (head) walker.push(head.id());
-    walker.pushGlob('*');
-    if (skip) await walker.fastWalk(skip).catch(normalizeError);
+    if (ids && ids.length) {
+      for (const id of ids) walker.push(id);
+    } else {
+      const head = await this.r.getHeadCommit().catch(normalizeError);
+      if (head) walker.push(head.id());
+      walker.pushGlob('*');
+      if (skip) await walker.fastWalk(skip).catch(normalizeError);
+    }
     const commits = await walker.getCommits(limit).catch(normalizeError);
-    // TODO only keep formatCommit, the stats are for a details call
+    // TODO only keep formatCommit, the stats should go in a details call
     /** @type {Commit[]} */
     const result = await Promise.all(
       commits.map(async (c) => ({ ...(await getFileStats(c)), ...formatCommit(c) }))

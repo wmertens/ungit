@@ -8,10 +8,11 @@ const Selectable = require('./selectable');
 class RefViewModel extends Selectable {
   constructor(fullRefName, graph) {
     super(graph);
-    this.graph = graph;
+    this.graph = /** @type {GitGraph} */ (graph);
     this.sha1 = null;
     this.name = fullRefName;
-    this.node = ko.observable();
+    this.stamp = null;
+    this.node = ko.observable(/** @type {GraphNode} */ (null));
     this.localRefName = this.name; // origin/master or master
     this.refName = this.name; // master
     this.isRemoteTag = this.name.indexOf('remote-tag: ') == 0;
@@ -92,6 +93,7 @@ class RefViewModel extends Selectable {
   dragStart() {
     this.graph.currentActionContext(this);
     this.isDragging(true);
+    // @ts-ignore
     if (document.activeElement) document.activeElement.blur();
   }
 
@@ -103,7 +105,7 @@ class RefViewModel extends Selectable {
   moveTo(target, rewindWarnOverride) {
     let promise;
     if (this.isLocal) {
-      const toNode = this.graph.nodesById[target];
+      const toNode = this.graph.nodesById.get(target);
       const args = {
         path: this.graph.repoPath(),
         name: this.refName,
@@ -165,7 +167,7 @@ class RefViewModel extends Selectable {
     return promise
       .then((res) => {
         if (!res) return;
-        const targetNode = this.graph.getNode(target, null, true);
+        const targetNode = this.graph.getNode(target);
         if (this.graph.checkedOutBranch() == this.refName) {
           this.graph.HEADref().node(targetNode);
         }
