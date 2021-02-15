@@ -325,6 +325,7 @@ class NGWrap {
     return out;
   }
 
+  // TODO limit and skip
   async diffFile(filename, oldFilename, sha1, ignoreWhiteSpace) {
     let diffs;
     if (sha1) {

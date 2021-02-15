@@ -78,37 +78,44 @@ class BranchesViewModel {
         this.graph.refsById = refsById;
         const sorted = refs
           .map(({ name, sha1 }) => {
+            // !!! side effect: registers the ref
             const ref = this.graph.getRef(name.replace('refs/tags', 'tag: refs/tags'));
             if (!refsById[sha1]) refsById[sha1] = [];
             refsById[sha1].push(name);
-            // !!! side effect: registers the node
-            ref.node(this.graph.getNode(sha1));
             ref.version = version;
+            ref.sha1 = sha1;
             return ref;
           })
-          .filter((ref) => {
-            if (ref.localRefName == 'refs/stash') return false;
-            if (ref.localRefName.endsWith('/HEAD')) return false;
-            if (!this.isShowRemote() && ref.isRemote) return false;
-            if (!this.isShowBranch() && ref.isBranch) return false;
-            if (!this.isShowTag() && ref.isTag) return false;
+          .filter(({ localRefName, isRemote, isBranch, isTag }) => {
+            if (
+              localRefName == 'refs/stash' ||
+              // Remote HEAD
+              localRefName.endsWith('/HEAD') ||
+              (isRemote && !this.isShowRemote()) ||
+              (isBranch && !this.isShowBranch()) ||
+              (isTag && !this.isShowTag())
+            )
+              return false;
             return true;
           })
           .sort((a, b) => {
             if (a.current() || b.current()) {
+              // Current branch is always first
               return a.current() ? -1 : 1;
             } else if (a.isRemoteBranch === b.isRemoteBranch) {
-              if (a.name < b.name) {
-                return -1;
-              }
-              if (a.name > b.name) {
-                return 1;
-              }
-              return 0;
+              // Otherwise, sort by name, grouped by remoteness
+              return a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
             } else {
+              // Remote branches show last
               return a.isRemoteBranch ? 1 : -1;
             }
           });
+        for (const ref of sorted) {
+          // TODO showDanglingTags option
+          const isImportant = !(ref.isRemoteTag || ref.isLocalTag);
+          // These are the visible refs of the graph
+          ref.node(this.graph.getNode(ref.sha1, null, isImportant));
+        }
         this.branchesAndLocalTags(sorted);
         this.graph.refs().forEach((ref) => {
           // ref was removed from another source
@@ -116,6 +123,7 @@ class BranchesViewModel {
             ref.remove(true);
           }
         });
+        this.graph.loadNodesFromApiThrottled();
       })
       .catch((e) => this.server.unhandledRejection(e));
 

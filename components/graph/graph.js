@@ -19,6 +19,7 @@ class GraphViewModel {
     this.server = server;
     this.currentRemote = ko.observable();
     this.nodes = ko.observableArray();
+    this.missingNodes = new Set();
     this.logNodes = [];
     this.refsById = {};
     this.edges = ko.observableArray();
@@ -79,7 +80,6 @@ class GraphViewModel {
     this.loadNodesFromApiThrottled = _.throttle(this.loadNodesFromApi.bind(this), 1000);
     this.updateBranchesThrottled = _.throttle(this.updateBranches.bind(this), 1000);
     this.updateBranches();
-    this.loadNodesFromApi();
     this.graphWidth = ko.observable();
     this.graphHeight = ko.observable(800);
     this.searchIcon = octicons.search.toSVG({ height: 18 });
@@ -90,10 +90,14 @@ class GraphViewModel {
     ko.renderTemplate('graph', this, {}, parentElement);
   }
 
-  getNode(sha1, logEntry) {
+  getNode(sha1, logEntry, isImportant) {
     let nodeViewModel = this.nodesById[sha1];
-    if (!nodeViewModel) nodeViewModel = this.nodesById[sha1] = new GitNodeViewModel(this, sha1);
+    if (!nodeViewModel) {
+      nodeViewModel = this.nodesById[sha1] = new GitNodeViewModel(this, sha1);
+    }
     if (logEntry) nodeViewModel.setData(logEntry);
+    if (!sha1) console.log(new Error('no sha1').stack);
+    if (sha1 && isImportant && !nodeViewModel.isInited) this.missingNodes.add(sha1);
     return nodeViewModel;
   }
 
@@ -111,6 +115,7 @@ class GraphViewModel {
   }
 
   async loadNodesFromApi() {
+    console.log('missing %d nodes', this.missingNodes.size);
     const nodeSize = this.nodes().length;
     try {
       const log = await this.server.getPromise('/gitlog', {

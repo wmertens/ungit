@@ -153,20 +153,25 @@ class GitNodeViewModel extends Animateable {
     this.animate();
   }
 
-  setData(logEntry) {
-    this.title(logEntry.message.split('\n')[0]);
-    this.parents(logEntry.parents || []);
-    this.commitTime = logEntry.commitDate;
+  setData(/** @type {Commit} */ logEntry) {
+    const { sha1, message, parents = [], commitDate, signatureMade, signatureDate } = logEntry;
+    this.title(message.split('\n')[0]);
+    this.parents(parents);
+    // Register parents as potentially missing
+    for (const pId of parents) this.graph.getNode(pId, null, true);
+    this.commitTime = commitDate;
     this.date = Date.parse(this.commitTime);
     this.commitComponent.setData(logEntry);
-    this.signatureMade(logEntry.signatureMade);
-    this.signatureDate(logEntry.signatureDate);
+    this.signatureMade(signatureMade);
+    this.signatureDate(signatureDate);
 
-    const refs = this.graph.refsById[logEntry.sha1];
-    if (refs) {
-      refs.forEach((ref) => this.graph.getRef(ref).node(this));
-    }
+    // TODO actually, this just needs to mark the graph dirty
+    // const refs = this.graph.refsById[sha1];
+    // if (refs) for (const ref of refs) this.graph.getRef(ref).node(this);
+
     this.isInited = true;
+    // This node is no longer missing
+    this.graph.missingNodes.delete(sha1);
   }
 
   showBranchingForm() {
@@ -347,10 +352,6 @@ class GitNodeViewModel extends Animateable {
 
   nodeMouseout() {
     this.nodeIsMousehover(false);
-  }
-
-  isViewable() {
-    return this.graph.nodes().includes(this);
   }
 }
 

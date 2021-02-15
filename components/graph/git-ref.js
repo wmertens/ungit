@@ -9,6 +9,7 @@ class RefViewModel extends Selectable {
   constructor(fullRefName, graph) {
     super(graph);
     this.graph = graph;
+    this.sha1 = null;
     this.name = fullRefName;
     this.node = ko.observable();
     this.localRefName = this.name; // origin/master or master
@@ -164,7 +165,7 @@ class RefViewModel extends Selectable {
     return promise
       .then((res) => {
         if (!res) return;
-        const targetNode = this.graph.getNode(target);
+        const targetNode = this.graph.getNode(target, null, true);
         if (this.graph.checkedOutBranch() == this.refName) {
           this.graph.HEADref().node(targetNode);
         }

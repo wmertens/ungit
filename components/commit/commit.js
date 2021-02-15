@@ -22,6 +22,7 @@ class CommitViewModel {
     this.message = ko.observable();
     this.title = ko.observable();
     this.body = ko.observable();
+    // TODO this is initialized with number but gets moment
     this.authorDate = ko.observable(0);
     this.authorDateFromNow = ko.observable();
     this.authorName = ko.observable();
@@ -47,7 +48,7 @@ class CommitViewModel {
     ko.renderTemplate('commit', this, {}, parentElement);
   }
 
-  setData(args) {
+  setData(/** @type {Commit} */ args) {
     this.commitTime(moment(new Date(args.commitDate)));
     this.authorTime(moment(new Date(args.authorDate)));
     const message = args.message.split('\n');
