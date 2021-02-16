@@ -43,7 +43,7 @@ const baseDir = path.join(__dirname, '..');
   console.log('browserify:common');
   const publicSourceDir = path.join(baseDir, 'public/source');
   const b = browserify(path.join(baseDir, 'public/source/main.js'), {
-    noParse: ['dnd-page-scroll', 'jquery', 'knockout'],
+    noParse: ['dnd-page-scroll', 'jquery', 'knockout', 'js-sorted-set'],
     debug: true,
   });
   b.require(path.join(publicSourceDir, 'components.js'), { expose: 'ungit-components' });
@@ -52,6 +52,7 @@ const baseDir = path.join(__dirname, '..');
   b.require(path.join(publicSourceDir, 'program-events.js'), { expose: 'ungit-program-events' });
   b.require(path.join(publicSourceDir, 'storage.js'), { expose: 'ungit-storage' });
   b.require(path.join(baseDir, 'source/address-parser.js'), { expose: 'ungit-address-parser' });
+  b.require('js-sorted-set', { expose: 'js-sorted-set' });
   b.require('bluebird', { expose: 'bluebird' });
   b.require('blueimp-md5', { expose: 'blueimp-md5' });
   b.require('diff2html', { expose: 'diff2html' });

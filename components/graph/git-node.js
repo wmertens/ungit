@@ -5,26 +5,30 @@ const programEvents = require('ungit-program-events');
 const Animateable = require('./animateable');
 const GraphActions = require('./git-graph-actions');
 
-const maxBranchesToDisplay = parseInt((ungit.config.numRefsToShow / 5) * 3); // 3/5 of refs to show to branches
+const maxBranchesToDisplay = Math.ceil((ungit.config.numRefsToShow * 3) / 5); // 3/5 of refs to show to branches
 const maxTagsToDisplay = ungit.config.numRefsToShow - maxBranchesToDisplay; // 2/5 of refs to show to tags
 
 class GitNodeViewModel extends Animateable {
   constructor(graph, sha1) {
     super(graph);
     this.graph = graph;
-    this.sha1 = sha1;
+    this.sha1 = /** @type {Hash} */ sha1;
+    /* calcNodes data */
+    this.order = 0;
+    this.children = null;
+    this.slotOffset = ko.observable(0);
+    this.aboveNode = undefined;
+    this.belowNode = undefined;
+    this.ideologicalBranch = ko.observable(/** @type {GraphRef} */ (null));
+    /* calcNodes data end */
     this.isInited = ko.observable(false);
     this.title = ko.observable();
-    this.parents = ko.observableArray();
+    this.parents = ko.observableArray(/** @type {Hash[]} */ ([]));
     this.commitTime = undefined; // commit time in string
     this.date = undefined; // commit time in numeric format for sort
     this.color = ko.observable();
-    this.branchOrder = ko.observable();
-    this.aboveNode = undefined;
-    this.belowNode = undefined;
-    this.ideologicalBranch = ko.observable();
-    this.remoteTags = ko.observableArray();
-    this.branchesAndLocalTags = ko.observableArray();
+    this.remoteTags = ko.observableArray(/** @type {GraphRef[]} */ ([]));
+    this.branchesAndLocalTags = ko.observableArray(/** @type {GraphRef[]} */ ([]));
     this.signatureDate = ko.observable();
     this.signatureMade = ko.observable();
     this.pgpVerifiedString = ko.computed(() => {
@@ -42,7 +46,7 @@ class GitNodeViewModel extends Animateable {
         if (!a.isLocal && b.isLocal) return 1;
         return a.refName < b.refName ? -1 : 1;
       });
-      return rs;
+      return /** @type {GraphRef[]} */ (rs);
     });
     // These are split up like this because branches and local tags can be found in the git log,
     // whereas remote tags needs to be fetched with another command (which is much slower)
@@ -71,8 +75,11 @@ class GitNodeViewModel extends Animateable {
       }
     });
     this.nodeIsMousehover = ko.observable(false);
+    this.slot = ko.computed(() =>
+      this.ideologicalBranch() ? this.ideologicalBranch().slot() + this.slotOffset() : -1
+    );
     this.commitContainerVisible = ko.computed(
-      () => this.branchOrder() === 0 || this.nodeIsMousehover() || this.selected()
+      () => this.slot() === 0 || this.nodeIsMousehover() || this.selected()
     );
     this.isEdgeHighlighted = ko.observable(false);
     // for small empty black circle to highlight a node
@@ -125,11 +132,11 @@ class GitNodeViewModel extends Animateable {
 
   render() {
     this.refSearchFormVisible(false);
-    const slot = this.branchOrder();
+    const slot = this.slot();
     const isMain = slot === 0;
     const prev = this.aboveNode;
     const prevY = prev ? prev.cy() : 0;
-    const prevOnMain = prev && prev.branchOrder() === 0;
+    const prevOnMain = prev && prev.slot() === 0;
 
     const x = 610 + 90 * slot;
     const radius = isMain ? 30 : 15;
@@ -148,7 +155,7 @@ class GitNodeViewModel extends Animateable {
     this.cx(x);
     this.cy(Math.max(y, 120));
     this.r(radius);
-    this.color(this.ideologicalBranch() ? this.ideologicalBranch().color : '#666');
+    this.color(this.ideologicalBranch().color);
     this.animate();
   }
 

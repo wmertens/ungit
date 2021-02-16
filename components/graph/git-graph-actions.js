@@ -320,9 +320,9 @@ class Uncommit extends ActionBase {
     return this.server
       .postPromise('/reset', { path: this.graph.repoPath(), to: 'HEAD^', mode: 'mixed' })
       .then(() => {
-        // TODO just recalc
+        /** @type {GraphNode} */
         let targetNode = this.node.belowNode;
-        while (targetNode && targetNode.branchOrder() !== 0) {
+        while (targetNode && targetNode.slot() !== 0) {
           targetNode = targetNode.belowNode;
         }
         this.graph.HEADref().node(targetNode ? targetNode : null);

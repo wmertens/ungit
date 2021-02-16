@@ -7,7 +7,7 @@ const components = require('ungit-components');
 components.register('commit', (args) => new CommitViewModel(args));
 
 class CommitViewModel {
-  constructor(gitNode) {
+  constructor(/** @type {GraphNode} */ gitNode) {
     this.repoPath = gitNode.graph.repoPath;
     this.sha1 = gitNode.sha1;
     this.isInited = ko.observable(false);
@@ -37,7 +37,7 @@ class CommitViewModel {
     );
 
     this.diffStyle = ko.computed(() => {
-      const marginLeft = Math.min(gitNode.branchOrder() * 70, 450) * -1;
+      const marginLeft = Math.min(gitNode.slot() * 70, 450) * -1;
       if (this.selected() && this.element())
         return { 'margin-left': `${marginLeft}px`, width: `${window.innerWidth - 220}px` };
       else return {};

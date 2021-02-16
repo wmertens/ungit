@@ -5,6 +5,7 @@ const components = require('ungit-components');
 const GitNodeViewModel = require('./git-node');
 const GitRefViewModel = require('./git-ref');
 const EdgeViewModel = require('./edge');
+const SortedSet = require('js-sorted-set');
 const numberOfNodesPerLoad = ungit.config.numberOfNodesPerLoad;
 
 components.register('graph', (args) => new GraphViewModel(args.server, args.repoPath));
@@ -41,7 +42,7 @@ class GraphViewModel {
     this.scrolledToEnd = _.debounce(() => this.fetchCommits(), 500, true);
     this.loadAhead = _.debounce(() => this.fetchCommits(), 500, true);
     this.commitOpacity = ko.observable(1.0);
-    this.highestBranchOrder = 0;
+    this.maxSlot = 0;
     this.hoverGraphActionGraphic = ko.observable();
     this.hoverGraphActionGraphic.subscribe(
       (value) => {
@@ -134,10 +135,30 @@ class GraphViewModel {
 
   computeNodes() {
     // TODO only re-run if selected branches or gotten nodes changed
-    // TODO allow dangling tags as roots
-    const nodes = [];
+    const nodes = new SortedSet(
+      // Sort commits by descending date
+      {
+        comparator: (/** @type {GraphNode} */ a, /** @type {GraphNode} */ b) => {
+          if (a === b) return 0;
+          const refA = a.ideologicalBranch();
+          const refB = b.ideologicalBranch();
+          if (a.isInited()) {
+            if (b.isInited()) {
+              // Make sure same-branch commits are in walk order, ignore date
+              if (refA === refB && a.slotOffset() === b.slotOffset()) return a.order - b.order;
+              const diff = b.date - a.date;
+              if (diff) return diff;
+            } else {
+              return -1;
+            }
+          } else if (b.isInited()) return 1;
+          return a.order - b.order;
+        },
+      }
+    );
     const refs = this.refs()
       // Pick the refs to show
+      // TODO allow dangling tags as roots
       .filter((r) => !r.isLocalTag && !r.isRemoteTag && !r.isStash)
       // Branch ordering
       .sort((a, b) => {
@@ -150,53 +171,93 @@ class GraphViewModel {
         if (a.isHEAD && !b.isHEAD) return 1;
         if (!a.isHEAD && b.isHEAD) return -1;
         if (a.node() === b.node()) return 0;
-        if (a.node().date && b.node().date) return a.node().date - b.node().date;
-        return a.refName < b.refName ? -1 : a.refName > b.refName ? 1 : 0;
+        if (a.node().date && b.node().date) return b.node().date - a.node().date;
+        return 0;
       });
-
-    const stamp = this._markIdeologicalStamp++;
-    let branchSlot = 0;
-    const walk = (node, ref, slot) => {
-      if (node.stamp == stamp) return false;
-      node.stamp = stamp;
+    if (!refs.length) return;
+    let nodeCount = 0;
+    const walkRef = (
+      /** @type {GraphNode} */ node,
+      /** @type {GraphRef} */ ref,
+      /** @type {number} */ slot
+    ) => {
+      if (nodes.contains(node)) return slot - 1;
+      node.order = nodeCount++;
+      node.children = [];
+      node.slotOffset(slot);
+      node.ideologicalBranch(ref);
+      nodes.insert(node);
       if (!node.isInited()) {
         this.missingNodes.add(node.sha1);
-        return false;
+        return slot;
       }
-      if (slot > branchSlot) branchSlot = slot;
-      nodes.push(node);
-      node.ideologicalBranch(ref);
-      node.branchOrder(slot);
       const parents = node.parents();
       for (let i = 0; i < parents.length; i++) {
         const parent = this.nodesById.get(parents[i]);
-        walk(parent, ref, slot + i);
+        // TODO this doesn't seem right yet - we want to know the
+        // maximum width of the graph below this node
+        slot = walkRef(parent, ref, slot + i);
+        parent.children.push(node);
       }
-      return true;
+      return slot;
     };
-    for (const ref of refs) {
+    for (let order = 0; order < refs.length; order++) {
+      const ref = refs[order];
+      // Initialize ref for offset calc
+      ref.order = order;
+      ref.slot(-1);
+
       const node = ref.node();
       if (!node) {
         console.error('ref has no node, impossible', ref);
         continue;
       }
-      const hasNode = walk(node, ref, branchSlot);
-      if (hasNode) branchSlot++;
+      walkRef(node, ref, 0);
     }
 
-    this.highestBranchOrder = branchSlot - 1;
+    this.maxSlot = 0;
+
+    // We walk the nodes in date+walk order and keep track of the width
+    // of the graph at each point so we can reuse slots
+    /** @type {GraphNode} */
     let prevNode;
-    // Sort by descending date
-    nodes.sort((a, b) => (a.isInited() && b.isInited() ? b.date - a.date : 0));
-    for (const node of nodes) {
+    /** @type {number[]} */
+    const widths = refs.map((r) =>
+      // Reserve room for HEAD
+      r.isLocalHEAD ? 1 : 0
+    );
+    /** @type {GraphNode[]} */
+    const sortedNodes = nodes.map((f) => f);
+    for (const node of sortedNodes) {
       node.aboveNode = prevNode;
       if (prevNode) prevNode.belowNode = node;
       prevNode = node;
+
+      const ref = node.ideologicalBranch();
+      const parents = node.parents();
+      const leftParentId = parents[0];
+      const leftParent = leftParentId && this.nodesById.get(leftParentId);
+      const isLeaf = !leftParent || leftParent.ideologicalBranch() !== ref;
+      if (isLeaf) {
+        if (ref.slot() === -1) {
+          // We found the first time the branch joined another one
+          let slot = 0;
+          for (let i = 0; i < ref.order; i++) slot += widths[i];
+          ref.slot(slot);
+        }
+      }
+      // TODO fix HEAD
+      const delta =
+        parents.length - node.children.filter((n) => n.ideologicalBranch() === ref).length;
+      widths[ref.order] += delta;
+      const totalWidth = widths.reduce((s, w) => s + w);
+      if (this.maxSlot < totalWidth) this.maxSlot = totalWidth;
     }
+
     if (prevNode) prevNode.belowNode = null;
 
     const edges = [];
-    for (const node of nodes) {
+    for (const node of sortedNodes) {
       for (const parentSha1 of node.parents()) {
         edges.push(this.getEdge(node.sha1, parentSha1));
       }
@@ -204,12 +265,12 @@ class GraphViewModel {
     }
 
     this.edges(edges);
-    this.nodes(nodes);
+    this.nodes(sortedNodes);
 
-    if (nodes.length > 0) {
-      this.graphHeight(nodes[nodes.length - 1].cy() + 80);
+    if (sortedNodes.length > 0) {
+      this.graphHeight(sortedNodes[sortedNodes.length - 1].cy() + 80);
     }
-    this.graphWidth(1000 + this.highestBranchOrder * 90);
+    this.graphWidth(1000 + this.maxSlot * 90);
   }
 
   getEdge(nodeAsha1, nodeBsha1) {
