@@ -125,27 +125,29 @@ class GitNodeViewModel extends Animateable {
 
   render() {
     this.refSearchFormVisible(false);
-    this.cx(610 + 90 * this.branchOrder());
+    const slot = this.branchOrder();
+    const isMain = slot === 0;
+    const prev = this.aboveNode;
+    const prevY = prev ? prev.cy() : 0;
+    const prevOnMain = prev && prev.branchOrder() === 0;
 
-    if (this.branchOrder() === 0) {
-      this.r(30);
-
-      if (!this.aboveNode) {
-        this.cy(120);
-      } else if (this.aboveNode.branchOrder() === 0) {
-        this.cy(this.aboveNode.cy() + 120);
-      } else {
-        this.cy(this.aboveNode.cy() + 60);
-      }
+    const x = 610 + 90 * slot;
+    const radius = isMain ? 30 : 15;
+    let y;
+    if (prev && prev.selected()) {
+      y = prevY + prev.commitComponent.element().offsetHeight + 30;
     } else {
-      this.r(15);
-      this.cy(this.aboveNode ? this.aboveNode.cy() + 60 : 120);
+      const delayY = prev && prev.date - this.date > 3600000 ? 0 : -15;
+      if (isMain) {
+        y = prevY + (prevOnMain ? 120 : 60) + delayY;
+      } else {
+        y = (prev ? prevY + 60 : 120) + delayY;
+      }
     }
 
-    if (this.aboveNode && this.aboveNode.selected()) {
-      this.cy(this.aboveNode.cy() + this.aboveNode.commitComponent.element().offsetHeight + 30);
-    }
-
+    this.cx(x);
+    this.cy(Math.max(y, 120));
+    this.r(radius);
     this.color(this.ideologicalBranch() ? this.ideologicalBranch().color : '#666');
     this.animate();
   }
