@@ -14,7 +14,7 @@ class GitNodeViewModel extends Animateable {
     this.graph = graph;
     this.sha1 = /** @type {Hash} */ sha1;
     /* calcNodes data */
-    this.order = 0;
+    this.order = -1;
     this.children = null;
     this.slotOffset = ko.observable(0);
     this.aboveNode = undefined;
