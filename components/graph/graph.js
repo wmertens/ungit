@@ -127,7 +127,7 @@ class GraphViewModel {
 
   traverseNodeLeftParents(node, callback) {
     callback(node);
-    const parent = this.nodesById.get(node.parents()[0]);
+    const parent = node.parents()[0];
     if (parent) {
       this.traverseNodeLeftParents(parent, callback);
     }
@@ -140,12 +140,16 @@ class GraphViewModel {
       {
         comparator: (/** @type {GraphNode} */ a, /** @type {GraphNode} */ b) => {
           if (a === b) return 0;
+          if (a.sha1 === b.sha1) {
+            console.log(a, b, 'are different but the same');
+            return 0;
+          }
           const refA = a.ideologicalBranch();
           const refB = b.ideologicalBranch();
           if (a.isInited()) {
             if (b.isInited()) {
-              // Make sure same-branch commits are in walk order, ignore date
-              if (refA === refB && a.slotOffset() === b.slotOffset()) return a.order - b.order;
+              // Make sure same-branch-slot commits are in walk order, ignore date
+              if (refA === refB && a.slot() === b.slot()) return a.order - b.order;
               const diff = b.date - a.date;
               if (diff) return diff;
             } else {
@@ -176,43 +180,35 @@ class GraphViewModel {
       });
     if (!refs.length) return;
     let nodeCount = 0;
-    const walkRef = (
-      /** @type {GraphNode} */ node,
-      /** @type {GraphRef} */ ref,
-      /** @type {number} */ slot
-    ) => {
-      if (nodes.contains(node)) return slot - 1;
+    const walkRef = (/** @type {GraphNode} */ node, /** @type {GraphRef} */ ref) => {
+      if (nodes.contains(node)) return false;
       node.order = nodeCount++;
       node.children = [];
-      node.slotOffset(slot);
       node.ideologicalBranch(ref);
       nodes.insert(node);
       if (!node.isInited()) {
         this.missingNodes.add(node.sha1);
-        return slot;
+        return false;
       }
       const parents = node.parents();
-      for (let i = 0; i < parents.length; i++) {
-        const parent = this.nodesById.get(parents[i]);
-        // TODO this doesn't seem right yet - we want to know the
-        // maximum width of the graph below this node
-        slot = walkRef(parent, ref, slot + i);
+      const width = parents.length;
+      for (let i = 0; i < width; i++) {
+        const parent = parents[i];
+        walkRef(parent, ref);
         parent.children.push(node);
       }
-      return slot;
+      return true;
     };
     for (let order = 0; order < refs.length; order++) {
       const ref = refs[order];
-      // Initialize ref for offset calc
       ref.order = order;
-      ref.slot(-1);
 
       const node = ref.node();
       if (!node) {
         console.error('ref has no node, impossible', ref);
         continue;
       }
-      walkRef(node, ref, 0);
+      walkRef(node, ref);
     }
 
     this.maxSlot = 0;
@@ -223,8 +219,8 @@ class GraphViewModel {
     let prevNode;
     /** @type {number[]} */
     const widths = refs.map((r) =>
-      // Reserve room for HEAD
-      r.isLocalHEAD ? 1 : 0
+      // Reserve room for HEAD branch
+      r.isLocalHEAD ? 2 : 0
     );
     /** @type {GraphNode[]} */
     const sortedNodes = nodes.map((f) => f);
@@ -234,32 +230,27 @@ class GraphViewModel {
       prevNode = node;
 
       const ref = node.ideologicalBranch();
-      const parents = node.parents();
-      const leftParentId = parents[0];
-      const leftParent = leftParentId && this.nodesById.get(leftParentId);
-      const isLeaf = !leftParent || leftParent.ideologicalBranch() !== ref;
-      if (isLeaf) {
-        if (ref.slot() === -1) {
-          // We found the first time the branch joined another one
-          let slot = 0;
-          for (let i = 0; i < ref.order; i++) slot += widths[i];
-          ref.slot(slot);
-        }
-      }
-      // TODO fix HEAD
+      const isSameBranch = (n) => n.ideologicalBranch() === ref;
       const delta =
-        parents.length - node.children.filter((n) => n.ideologicalBranch() === ref).length;
+        node.parents().filter(isSameBranch).length - node.children.filter(isSameBranch).length;
       widths[ref.order] += delta;
-      const totalWidth = widths.reduce((s, w) => s + w);
-      if (this.maxSlot < totalWidth) this.maxSlot = totalWidth;
+      console.log(widths.map((c) => c || ' ').join(''));
+      let slot = 0;
+      let total = 0;
+      for (let i = 0; i < widths.length; i++) {
+        if (i < ref.order) slot += widths[i];
+        total += widths[i];
+      }
+      node.slot(slot);
+      if (this.maxSlot < total) this.maxSlot = total;
     }
 
     if (prevNode) prevNode.belowNode = null;
 
     const edges = [];
     for (const node of sortedNodes) {
-      for (const parentSha1 of node.parents()) {
-        edges.push(this.getEdge(node.sha1, parentSha1));
+      for (const parent of node.parents()) {
+        edges.push(this.getEdge(node.sha1, parent.sha1));
       }
       node.render();
     }

@@ -13,7 +13,6 @@ class RefViewModel extends Selectable {
     this.name = fullRefName;
     /* calcNodes data */
     this.order = 0; // Used during calcNodes
-    this.slot = ko.observable(0);
     /* calcNodes data end */
     this.stamp = null; // setRemoteTags()
     this.node = ko.observable(/** @type {GraphNode} */ (null));

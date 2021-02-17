@@ -16,14 +16,14 @@ class GitNodeViewModel extends Animateable {
     /* calcNodes data */
     this.order = -1;
     this.children = null;
-    this.slotOffset = ko.observable(0);
+    this.slot = ko.observable(0);
     this.aboveNode = undefined;
     this.belowNode = undefined;
     this.ideologicalBranch = ko.observable(/** @type {GraphRef} */ (null));
     /* calcNodes data end */
     this.isInited = ko.observable(false);
     this.title = ko.observable();
-    this.parents = ko.observableArray(/** @type {Hash[]} */ ([]));
+    this.parents = ko.observableArray(/** @type {GraphNode[]} */ ([]));
     this.commitTime = undefined; // commit time in string
     this.date = undefined; // commit time in numeric format for sort
     this.color = ko.observable();
@@ -75,9 +75,6 @@ class GitNodeViewModel extends Animateable {
       }
     });
     this.nodeIsMousehover = ko.observable(false);
-    this.slot = ko.computed(() =>
-      this.ideologicalBranch() ? this.ideologicalBranch().slot() + this.slotOffset() : -1
-    );
     this.commitContainerVisible = ko.computed(
       () => this.slot() === 0 || this.nodeIsMousehover() || this.selected()
     );
@@ -162,9 +159,13 @@ class GitNodeViewModel extends Animateable {
   setData(/** @type {Commit} */ logEntry) {
     const { message, parents = [], commitDate, signatureMade, signatureDate } = logEntry;
     this.title(message.split('\n')[0]);
-    this.parents(parents);
+    const pNodes = [];
     // Register parents
-    for (const pId of parents) this.graph.getNode(pId);
+    for (const pId of parents) {
+      const p = this.graph.getNode(pId);
+      if (!pNodes.includes(p)) pNodes.push(p);
+    }
+    this.parents(pNodes);
     this.commitTime = commitDate;
     this.date = Date.parse(this.commitTime);
     this.commitComponent.setData(logEntry);
@@ -324,10 +325,10 @@ class GitNodeViewModel extends Animateable {
 
   getPathToCommonAncestor(node) {
     const path = [];
-    let thisNode = this;
+    let thisNode = /** @type {GraphNode} */ (this);
     while (thisNode && !node.isAncestor(thisNode)) {
       path.push(thisNode);
-      thisNode = this.graph.nodesById.get(thisNode.parents()[0]);
+      thisNode = thisNode.parents()[0];
     }
     if (thisNode) path.push(thisNode);
     return path;
@@ -336,7 +337,7 @@ class GitNodeViewModel extends Animateable {
   isAncestor(node) {
     if (node == this) return true;
     for (const v in this.parents()) {
-      const n = this.graph.nodesById.get(this.parents()[v]);
+      const n = this.parents()[v];
       if (n && n.isAncestor(node)) return true;
     }
     return false;

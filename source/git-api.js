@@ -49,6 +49,7 @@ exports.registerApi = (env) => {
             if (!isMac && !isWindows) {
               // recursive fs.watch only works on mac and windows
               const promises = [];
+              // TODO emit ref changes individually
               promises.push(watchPath(socket, path.join('.git', 'HEAD')));
               promises.push(watchPath(socket, path.join('.git', 'refs', 'heads')));
               promises.push(watchPath(socket, path.join('.git', 'refs', 'remotes')));
