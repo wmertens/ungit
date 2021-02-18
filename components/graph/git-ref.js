@@ -12,7 +12,9 @@ class RefViewModel extends Selectable {
     this.sha1 = null;
     this.name = fullRefName;
     /* calcNodes data */
-    this.order = 0; // Used during calcNodes
+    this.maxHeight = 0;
+    this.onto = null;
+    this.leaf = null;
     /* calcNodes data end */
     this.stamp = null; // setRemoteTags()
     this.node = ko.observable(/** @type {GraphNode} */ (null));

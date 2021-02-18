@@ -42,7 +42,6 @@ class GraphViewModel {
     this.scrolledToEnd = _.debounce(() => this.fetchCommits(), 500, true);
     this.loadAhead = _.debounce(() => this.fetchCommits(), 500, true);
     this.commitOpacity = ko.observable(1.0);
-    this.maxSlot = 0;
     this.hoverGraphActionGraphic = ko.observable();
     this.hoverGraphActionGraphic.subscribe(
       (value) => {
@@ -133,33 +132,15 @@ class GraphViewModel {
     }
   }
 
+  /**
+   * Concept: put branches + side branches on slots
+   * - order the refs in some way
+   * - fully walk their nodes, marking ideological branches and slots
+   * - this leaves a couple branches
+   * - put each branch on the graph in a slot where they are clear for their entire length
+   */
   computeNodes() {
     // TODO only re-run if selected branches or gotten nodes changed
-    const nodes = new SortedSet(
-      // Sort commits by descending date
-      {
-        comparator: (/** @type {GraphNode} */ a, /** @type {GraphNode} */ b) => {
-          if (a === b) return 0;
-          if (a.sha1 === b.sha1) {
-            console.log(a, b, 'are different but the same');
-            return 0;
-          }
-          const refA = a.ideologicalBranch();
-          const refB = b.ideologicalBranch();
-          if (a.isInited()) {
-            if (b.isInited()) {
-              // Make sure same-branch-slot commits are in walk order, ignore date
-              if (refA === refB && a.slot() === b.slot()) return a.order - b.order;
-              const diff = b.date - a.date;
-              if (diff) return diff;
-            } else {
-              return -1;
-            }
-          } else if (b.isInited()) return 1;
-          return a.order - b.order;
-        },
-      }
-    );
     const refs = this.refs()
       // Pick the refs to show
       // TODO allow dangling tags as roots
@@ -180,88 +161,150 @@ class GraphViewModel {
       });
     if (!refs.length) return;
     let nodeCount = 0;
-    const walkRef = (/** @type {GraphNode} */ node, /** @type {GraphRef} */ ref) => {
-      if (nodes.contains(node)) return false;
-      node.order = nodeCount++;
-      node.children = [];
-      node.ideologicalBranch(ref);
-      nodes.insert(node);
-      if (!node.isInited()) {
-        this.missingNodes.add(node.sha1);
-        return false;
-      }
-      const parents = node.parents();
-      const width = parents.length;
-      for (let i = 0; i < width; i++) {
-        const parent = parents[i];
-        walkRef(parent, ref);
-        parent.children.push(node);
-      }
-      return true;
-    };
-    for (let order = 0; order < refs.length; order++) {
-      const ref = refs[order];
-      ref.order = order;
+    const seen = new WeakSet();
+    /** @type {{ node: GraphNode; slot: number; distance: number; ref: GraphRef }[]} */
+    const toWalk = [];
+    for (const ref of refs) {
+      ref.maxHeight = 0;
+      ref.onto = null;
+      ref.leaf = null;
+      toWalk.push({ node: ref.node(), slot: 0, distance: 0, ref });
+    }
+    while (toWalk.length) {
+      // eslint-disable-next-line prefer-const
+      let { node, slot, distance, ref } = toWalk.shift();
+      if (seen.has(node)) continue;
+      do {
+        distance++;
+        node.order = nodeCount++;
+        node.slot(slot);
+        node.ideologicalBranch(ref);
+        seen.add(node);
+        if (!node.isInited()) this.missingNodes.add(node.sha1);
+        const parents = node.parents();
+        const left = parents[0];
+        for (let i = 0; i < parents.length; i++) {
+          const p = parents[i];
+          // Sort missing nodes immediately below last child
+          if (!p.isInited() && (!p.date || p.date >= node.date)) p.date = node.date - 1;
+          if (i) toWalk.unshift({ node: p, slot: slot + i + 1, distance, ref });
+        }
 
-      const node = ref.node();
-      if (!node) {
-        console.error('ref has no node, impossible', ref);
-        continue;
-      }
-      walkRef(node, ref);
+        if (!left || seen.has(left)) {
+          if ((!left || ref !== left.ideologicalBranch()) && ref.maxHeight < distance) {
+            ref.maxHeight = distance;
+            ref.onto = left && left.ideologicalBranch();
+            ref.leaf = node;
+          }
+          break;
+        }
+        node = left;
+        // eslint-disable-next-line no-constant-condition
+      } while (true);
     }
 
-    this.maxSlot = 0;
+    // Sort commits by descending date
+    // Note: output 0 means nodes are the same and are stored only once
+    const comparator = (/** @type {GraphNode} */ a, /** @type {GraphNode} */ b) => {
+      if (a === b) return 0;
+      if (a.sha1 === b.sha1) {
+        console.log(a, b, 'are different but the same');
+        return 0;
+      }
+      const refA = a.ideologicalBranch();
+      const refB = b.ideologicalBranch();
+      // Since we initialize order before inserting, this should never clash
+      const orderDiff = a.order - b.order;
+      // Make sure same-branch-slot commits are in walk order, ignoring date
+      if (refA === refB && a.slot() === b.slot()) return orderDiff;
+      // Otherwise order by descending date if known
+      if (a.date && b.date) {
+        const diff = b.date - a.date;
+        // don't return 0
+        if (diff) return diff;
+      }
+      return orderDiff;
+    };
+    const nodes = new SortedSet({ comparator });
+    // We use a separate set because our sorting is dependent on slot
+    // and that can cause .contains to give false negatives
+    const sortedSeen = new WeakSet();
+    // Now we take each branch and graft it onto the graph
+    let maxSlot = 0;
+    let lastRef;
+    while (refs.length) {
+      let ref;
+      if (lastRef) {
+        const idx = refs.findIndex((r) => r.onto === lastRef);
+        if (idx >= 0) ref = refs.splice(idx, 1)[0];
+      }
+      if (!ref) ref = refs.shift();
+      if (!ref.maxHeight) continue;
+      const node = ref.node();
+      // The branch is already in another branch
+      if (nodes.contains(node)) continue;
+      const until = ref.leaf;
 
-    // We walk the nodes in date+walk order and keep track of the width
-    // of the graph at each point so we can reuse slots
+      // Find the next free slot by walking the nodes next to ref
+      // This will point to before the next largest node
+      let it = nodes.findIterator(node);
+      // Leave room for possible previous branch end by going one back
+      if (it.hasPrevious()) it = it.previous();
+      // Give HEAD some room
+      let mySlot = ref.isLocalHEAD ? -1 : 1;
+      let val;
+      let i = 0;
+      while (i < 100 && it.hasNext()) {
+        i++;
+        val = it.value();
+        const slot = val.slot();
+        if (slot > maxSlot) maxSlot = slot;
+        if (slot > mySlot) mySlot = slot;
+        if (comparator(until, val) > 0) break;
+        it = it.next();
+      }
+      mySlot++;
+      // Now insert the branch and move it to its slot
+      const putBranch = (node) => {
+        if (sortedSeen.has(node)) return;
+        node.slot(node.slot() + mySlot);
+        nodes.insert(node);
+        sortedSeen.add(node);
+        for (const next of node.parents()) putBranch(next);
+      };
+      putBranch(node);
+      lastRef = ref;
+    }
+
+    // TODO probably better to keep sortedNodes and store the index
     /** @type {GraphNode} */
     let prevNode;
-    /** @type {number[]} */
-    const widths = refs.map((r) =>
-      // Reserve room for HEAD branch
-      r.isLocalHEAD ? 2 : 0
-    );
     /** @type {GraphNode[]} */
     const sortedNodes = nodes.map((f) => f);
     for (const node of sortedNodes) {
       node.aboveNode = prevNode;
       if (prevNode) prevNode.belowNode = node;
       prevNode = node;
-
-      const ref = node.ideologicalBranch();
-      const isSameBranch = (n) => n.ideologicalBranch() === ref;
-      const delta =
-        node.parents().filter(isSameBranch).length - node.children.filter(isSameBranch).length;
-      widths[ref.order] += delta;
-      console.log(widths.map((c) => c || ' ').join(''));
-      let slot = 0;
-      let total = 0;
-      for (let i = 0; i < widths.length; i++) {
-        if (i < ref.order) slot += widths[i];
-        total += widths[i];
-      }
-      node.slot(slot);
-      if (this.maxSlot < total) this.maxSlot = total;
     }
-
     if (prevNode) prevNode.belowNode = null;
 
     const edges = [];
+    let maxY = 0;
     for (const node of sortedNodes) {
       for (const parent of node.parents()) {
         edges.push(this.getEdge(node.sha1, parent.sha1));
       }
       node.render();
+      if (maxY < node.cy()) maxY = node.cy();
     }
 
     this.edges(edges);
     this.nodes(sortedNodes);
 
     if (sortedNodes.length > 0) {
-      this.graphHeight(sortedNodes[sortedNodes.length - 1].cy() + 80);
+      this.graphHeight(maxY + 80);
     }
-    this.graphWidth(1000 + this.maxSlot * 90);
+    this.graphWidth(1000 + maxSlot * 90);
   }
 
   getEdge(nodeAsha1, nodeBsha1) {

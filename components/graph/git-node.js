@@ -15,7 +15,6 @@ class GitNodeViewModel extends Animateable {
     this.sha1 = /** @type {Hash} */ sha1;
     /* calcNodes data */
     this.order = -1;
-    this.children = null;
     this.slot = ko.observable(0);
     this.aboveNode = undefined;
     this.belowNode = undefined;
@@ -152,7 +151,7 @@ class GitNodeViewModel extends Animateable {
     this.cx(x);
     this.cy(Math.max(y, 120));
     this.r(radius);
-    this.color(this.ideologicalBranch().color);
+    this.color(this.isInited() ? this.ideologicalBranch().color : '#777');
     this.animate();
   }
 

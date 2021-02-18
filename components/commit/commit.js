@@ -75,6 +75,7 @@ class CommitViewModel {
   }
 
   updateLastAuthorDateFromNow(deltaT) {
+    if (!this.isInited()) return;
     this.lastUpdatedAuthorDateFromNow = this.lastUpdatedAuthorDateFromNow || 0;
     this.lastUpdatedAuthorDateFromNow += deltaT;
     if (this.lastUpdatedAuthorDateFromNow > 60 * 1000) {
