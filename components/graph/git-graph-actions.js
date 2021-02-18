@@ -166,7 +166,7 @@ class Merge extends ActionBase {
     this.node = node;
     this.visible = ko.computed(() => {
       if (this.isRunning()) return true;
-      if (!this.graph.checkedOutRef() || !this.graph.checkedOutRef().node()) return false;
+      if (!this.graph.checkedOutRef()) return false;
       return (
         this.graph.currentActionContext() instanceof RefViewModel &&
         !this.graph.currentActionContext().current() &&
@@ -319,14 +319,9 @@ class Uncommit extends ActionBase {
   perform() {
     return this.server
       .postPromise('/reset', { path: this.graph.repoPath(), to: 'HEAD^', mode: 'mixed' })
-      .then(() => {
-        /** @type {GraphNode} */
-        let targetNode = this.node.belowNode;
-        while (targetNode && targetNode.slot() !== 0) {
-          targetNode = targetNode.belowNode;
-        }
-        this.graph.HEADref().node(targetNode ? targetNode : null);
-        this.graph.checkedOutRef().node(targetNode ? targetNode : null);
+      .then((sha1) => {
+        this.graph.getRef('HEAD', sha1);
+        if (this.graph.checkedOutRef()) this.graph.checkedOutRef().setSha1(sha1);
       });
   }
 }

@@ -26,8 +26,8 @@ class GraphViewModel {
     this.nodesById = /** @type {Map<Hash, GraphNode>} */ (new Map());
     this.refsByRefName = /** @type {Record<string, GraphRef>} */ ({});
     this.checkedOutBranch = ko.observable();
-    this.checkedOutRef = ko.computed(() =>
-      this.checkedOutBranch() ? this.getRef(`refs/heads/${this.checkedOutBranch()}`) : null
+    this.checkedOutRef = ko.computed(
+      () => this.checkedOutBranch() && this.refsByRefName[`refs/heads/${this.checkedOutBranch()}`]
     );
     this.HEADref = ko.observable();
     this.HEAD = ko.computed(() => (this.HEADref() ? this.HEADref().node() : undefined));
@@ -87,12 +87,18 @@ class GraphViewModel {
 
   getRef(ref, sha1) {
     let refViewModel = this.refsByRefName[ref];
-    if (!refViewModel && sha1) {
-      refViewModel = this.refsByRefName[ref] = new GitRefViewModel(ref, this, sha1);
-      this.refs.push(refViewModel);
-      if (refViewModel.name === 'HEAD') {
-        this.HEADref(refViewModel);
+    if (sha1) {
+      if (refViewModel) {
+        if (refViewModel.sha1 !== sha1) refViewModel.setSha1(sha1);
+      } else {
+        refViewModel = this.refsByRefName[ref] = new GitRefViewModel(ref, this, sha1);
+        this.refs.push(refViewModel);
+        if (refViewModel.name === 'HEAD') {
+          this.HEADref(refViewModel);
+        }
       }
+    } else if (!refViewModel) {
+      throw new Error(`Unknown ref ${ref}`);
     }
     return refViewModel;
   }

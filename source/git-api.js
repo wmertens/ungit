@@ -318,6 +318,8 @@ exports.registerApi = (env) => {
       );
       await emitGitDirectoryChanged(repoPath);
       await emitWorkingTreeChanged(repoPath);
+      const head = await req.repo.getHead();
+      return head.sha1;
     })
   );
 

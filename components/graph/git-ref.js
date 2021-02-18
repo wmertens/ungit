@@ -92,6 +92,11 @@ class RefViewModel extends Selectable {
     };
   }
 
+  setSha1(sha1) {
+    this.sha1 = sha1;
+    this.node(this.graph.getNode(sha1));
+  }
+
   _colorFromHashOfString(string) {
     return `#${md5(string).toString().slice(0, 6)}`;
   }
@@ -277,8 +282,8 @@ class RefViewModel extends Selectable {
           });
         }
       })
-      .then(() => {
-        this.graph.HEADref().node(this.node());
+      .then((sha1) => {
+        this.graph.getRef('HEAD', sha1);
       })
       .catch((err) => {
         if (err.errorCode != 'merge-failed') this.server.unhandledRejection(err);
