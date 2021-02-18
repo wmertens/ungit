@@ -217,7 +217,7 @@ class RefViewModel extends Selectable {
   }
 
   getLocalRef() {
-    return this.graph.getRef(this.getLocalRefFullName());
+    return this.graph.getRef(this.getLocalRefFullName(), false);
   }
 
   getLocalRefFullName() {
@@ -227,7 +227,7 @@ class RefViewModel extends Selectable {
   }
 
   getRemoteRef(remote) {
-    return this.graph.getRef(this.getRemoteRefFullName(remote));
+    return this.graph.getRef(this.getRemoteRefFullName(remote), false);
   }
 
   getRemoteRefFullName(remote) {

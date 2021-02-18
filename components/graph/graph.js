@@ -97,7 +97,7 @@ class GraphViewModel {
           this.HEADref(refViewModel);
         }
       }
-    } else if (!refViewModel) {
+    } else if (!refViewModel && sha1 !== false) {
       throw new Error(`Unknown ref ${ref}`);
     }
     return refViewModel;
