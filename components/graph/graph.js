@@ -85,11 +85,10 @@ class GraphViewModel {
     return nodeViewModel;
   }
 
-  getRef(ref, constructIfUnavailable) {
-    if (constructIfUnavailable === undefined) constructIfUnavailable = true;
+  getRef(ref, sha1) {
     let refViewModel = this.refsByRefName[ref];
-    if (!refViewModel && constructIfUnavailable) {
-      refViewModel = this.refsByRefName[ref] = new GitRefViewModel(ref, this);
+    if (!refViewModel && sha1) {
+      refViewModel = this.refsByRefName[ref] = new GitRefViewModel(ref, this, sha1);
       this.refs.push(refViewModel);
       if (refViewModel.name === 'HEAD') {
         this.HEADref(refViewModel);
@@ -384,8 +383,8 @@ class GraphViewModel {
     remoteTags.forEach((ref) => {
       if (!ref.name.includes('^{}')) {
         const name = `remote-tag: ${ref.remote}/${ref.name.split('/')[2]}`;
-        this.getRef(name).node(this.getNode(sha1Map[ref.name]));
-        this.getRef(name).stamp = stamp;
+        const r = this.getRef(name, sha1Map[ref.name]);
+        r.stamp = stamp;
       }
     });
     this.refs().forEach((ref) => {

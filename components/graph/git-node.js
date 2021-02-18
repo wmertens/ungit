@@ -171,10 +171,6 @@ class GitNodeViewModel extends Animateable {
     this.signatureMade(signatureMade);
     this.signatureDate(signatureDate);
 
-    // TODO actually, this just needs to mark the graph dirty
-    // const refs = this.graph.refsById[sha1];
-    // if (refs) for (const ref of refs) this.graph.getRef(ref).node(this);
-
     this.isInited(true);
   }
 
@@ -229,7 +225,7 @@ class GitNodeViewModel extends Animateable {
         sha1: this.sha1,
       })
       .then(() => {
-        this.graph.getRef(`refs/heads/${this.newBranchName()}`).node(this);
+        this.graph.getRef(`refs/heads/${this.newBranchName()}`, this.sha1);
         if (ungit.config.autoCheckoutOnBranchCreate) {
           return this.graph.server.postPromise('/checkout', {
             path: this.graph.repoPath(),
@@ -253,7 +249,7 @@ class GitNodeViewModel extends Animateable {
         name: this.newBranchName(),
         sha1: this.sha1,
       })
-      .then(() => this.graph.getRef(`refs/tags/${this.newBranchName()}`).node(this))
+      .then(() => this.graph.getRef(`refs/tags/${this.newBranchName()}`, this.sha1))
       .catch((e) => this.graph.server.unhandledRejection(e))
       .finally(() => {
         this.branchingFormVisible(false);

@@ -6,10 +6,10 @@ const components = require('ungit-components');
 const Selectable = require('./selectable');
 
 class RefViewModel extends Selectable {
-  constructor(fullRefName, graph) {
+  constructor(fullRefName, /** @type {GitGraph} */ graph, /** @type {Hash} */ sha1) {
     super(graph);
-    this.graph = /** @type {GitGraph} */ (graph);
-    this.sha1 = null;
+    this.graph = graph;
+    this.sha1 = sha1;
     this.name = fullRefName;
     /* calcNodes data */
     this.maxHeight = 0;
@@ -71,6 +71,7 @@ class RefViewModel extends Selectable {
     this.node.subscribe((newNode) => {
       if (newNode) newNode.pushRef(this);
     });
+    this.node(graph.getNode(sha1));
 
     // This optimization is for autocomplete display
     this.value = splitedName[splitedName.length - 1];
@@ -211,7 +212,7 @@ class RefViewModel extends Selectable {
   }
 
   getLocalRef() {
-    return this.graph.getRef(this.getLocalRefFullName(), false);
+    return this.graph.getRef(this.getLocalRefFullName());
   }
 
   getLocalRefFullName() {
@@ -221,7 +222,7 @@ class RefViewModel extends Selectable {
   }
 
   getRemoteRef(remote) {
-    return this.graph.getRef(this.getRemoteRefFullName(remote), false);
+    return this.graph.getRef(this.getRemoteRefFullName(remote));
   }
 
   getRemoteRefFullName(remote) {

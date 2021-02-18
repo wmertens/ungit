@@ -13,7 +13,7 @@ components.register('branches', (args) => {
 });
 
 class BranchesViewModel {
-  constructor(server, graph, repoPath) {
+  constructor(server, /** @type {GitGraph} */ graph, repoPath) {
     this.repoPath = repoPath;
     this.server = server;
     this.branchesAndLocalTags = ko.observableArray();
@@ -79,11 +79,8 @@ class BranchesViewModel {
         for (const { name, sha1 } of refs) {
           const lname = name.replace('refs/tags', 'tag: refs/tags');
           // side effect: registers the ref
-          const ref = this.graph.getRef(lname);
+          const ref = this.graph.getRef(lname, sha1);
           ref.stamp = stamp;
-          ref.sha1 = sha1;
-          // side effect: registers the node
-          ref.node(this.graph.getNode(sha1));
           const { localRefName, isRemote, isBranch, isTag } = ref;
           if (
             !(

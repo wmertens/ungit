@@ -221,7 +221,7 @@ class Push extends ActionBase {
     const remoteRef = ref.getRemoteRef(this.graph.currentRemote());
 
     if (remoteRef) {
-      return remoteRef.moveTo(ref.node().sha1);
+      return remoteRef.moveTo(ref.sha1);
     } else {
       return ref
         .createRemoteRef()
