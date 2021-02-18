@@ -19,17 +19,6 @@ class EdgeViewModel extends Animateable {
             this.nodeB.cx(),
             this.nodeB.cy(),
           ];
-        } else {
-          return [
-            this.nodeA.cx(),
-            this.nodeA.cy(),
-            this.nodeA.cx(),
-            this.nodeA.cy(),
-            this.nodeA.cx(),
-            graph.graphHeight(),
-            this.nodeA.cx(),
-            graph.graphHeight(),
-          ];
         }
       } else {
         return [0, 0, 0, 0, 0, 0, 0, 0];

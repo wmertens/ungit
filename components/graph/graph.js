@@ -98,6 +98,8 @@ class GraphViewModel {
     return refViewModel;
   }
 
+  // TODO on startup, fetch HEAD only, then fetch missing on-screen nodes
+  // when they scroll into view
   async fetchCommits() {
     this.missingNodes.clear();
     this.computeNodes();
