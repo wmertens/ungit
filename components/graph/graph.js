@@ -148,6 +148,41 @@ class GraphViewModel {
    */
   computeNodes() {
     // TODO only re-run if selected branches or gotten nodes changed
+
+    /**
+     * Sorted collection of nodes
+     * Sort commits by descending date
+     * Note: output 0 means nodes are the same and are stored only once
+     * */
+    const comparator = (/** @type {GraphNode} */ a, /** @type {GraphNode} */ b) => {
+      if (a === b) return 0;
+      if (a.sha1 === b.sha1) {
+        console.log(a, b, 'are different but the same');
+        return 0;
+      }
+      if (a.parents().includes(b)) return -1;
+      if (b.parents().includes(a)) return 1;
+      const refA = a.ideologicalBranch();
+      const refB = b.ideologicalBranch();
+      // Since we initialize order before inserting, this should never clash
+      const orderDiff = a.order - b.order;
+      // Make sure same-branch-slot commits are in walk order, ignoring date
+      if (refA === refB && a.slot() === b.slot()) return orderDiff;
+      // Otherwise order by descending date if known
+      if (a.date && b.date) {
+        const diff = b.date - a.date;
+        // don't return 0
+        if (diff) return diff;
+      }
+      return orderDiff;
+    };
+    const nodes = new SortedSet({ comparator });
+
+    let maxSlot = 0;
+
+    // Get ordered set of refs to show
+    // perhaps make main branch always sort next to HEAD?
+    // or always give it the same color/style
     const refs = this.refs()
       // Pick the refs to show
       // TODO allow dangling tags as roots
@@ -167,120 +202,83 @@ class GraphViewModel {
         return 0;
       });
     if (!refs.length) return;
+
+    // Walk nodes in straight lines, then place them
     let nodeCount = 0;
     const seen = new WeakSet();
-    /** @type {{ node: GraphNode; slot: number; distance: number; ref: GraphRef }[]} */
+    /** @type {{ node: GraphNode; ref: GraphRef }[]} */
     const toWalk = [];
     for (const ref of refs) {
-      ref.maxHeight = 0;
-      ref.onto = null;
-      ref.leaf = null;
-      toWalk.push({ node: ref.node(), slot: 0, distance: 0, ref });
+      toWalk.push({ node: ref.node(), ref });
     }
     while (toWalk.length) {
       // eslint-disable-next-line prefer-const
-      let { node, slot, distance, ref } = toWalk.shift();
+      let { node, ref } = toWalk.shift();
       if (seen.has(node)) continue;
+      // Special case: skip branches without loaded node
+      if (node === ref.node() && !node.isInited()) {
+        this.missingNodes.add(node.sha1);
+        continue;
+      }
+
+      // Walk the leftmost tree to its end
+      const first = node;
+      let last = node;
       do {
-        distance++;
         node.order = nodeCount++;
-        node.slot(slot);
         node.ideologicalBranch(ref);
         seen.add(node);
         if (!node.isInited()) this.missingNodes.add(node.sha1);
         const parents = node.parents();
-        const left = parents[0];
-        for (let i = 0; i < parents.length; i++) {
+        for (let i = parents.length - 1; i >= 0; i--) {
           const p = parents[i];
           // Sort missing nodes immediately below last child
           if (!p.isInited() && (!p.date || p.date >= node.date)) p.date = node.date - 1;
-          if (i) toWalk.unshift({ node: p, slot: slot + i + 1, distance, ref });
+          // Walk extra parents later
+          if (i) toWalk.unshift({ node: p, ref });
         }
+        last = node;
+        node = parents[0];
+      } while (node && !seen.has(node));
 
-        if (!left || seen.has(left)) {
-          if ((!left || ref !== left.ideologicalBranch()) && ref.maxHeight < distance) {
-            ref.maxHeight = distance;
-            ref.onto = left && left.ideologicalBranch();
-            ref.leaf = node;
-          }
-          break;
-        }
-        node = left;
-        // eslint-disable-next-line no-constant-condition
-      } while (true);
-    }
+      // Find the next free slot by walking the nodes next to ref, from the first
 
-    // Sort commits by descending date
-    // Note: output 0 means nodes are the same and are stored only once
-    const comparator = (/** @type {GraphNode} */ a, /** @type {GraphNode} */ b) => {
-      if (a === b) return 0;
-      if (a.sha1 === b.sha1) {
-        console.log(a, b, 'are different but the same');
-        return 0;
-      }
-      const refA = a.ideologicalBranch();
-      const refB = b.ideologicalBranch();
-      // Since we initialize order before inserting, this should never clash
-      const orderDiff = a.order - b.order;
-      // Make sure same-branch-slot commits are in walk order, ignoring date
-      if (refA === refB && a.slot() === b.slot()) return orderDiff;
-      // Otherwise order by descending date if known
-      if (a.date && b.date) {
-        const diff = b.date - a.date;
-        // don't return 0
-        if (diff) return diff;
-      }
-      return orderDiff;
-    };
-    const nodes = new SortedSet({ comparator });
-    // We use a separate set because our sorting is dependent on slot
-    // and that can cause .contains to give false negatives
-    const sortedSeen = new WeakSet();
-    // Now we take each branch and graft it onto the graph
-    let maxSlot = 0;
-    let lastRef;
-    while (refs.length) {
-      let ref;
-      if (lastRef) {
-        const idx = refs.findIndex((r) => r.onto === lastRef);
-        if (idx >= 0) ref = refs.splice(idx, 1)[0];
-      }
-      if (!ref) ref = refs.shift();
-      if (!ref.maxHeight) continue;
-      const node = ref.node();
-      // The branch is already in another branch
-      if (nodes.contains(node)) continue;
-      const until = ref.leaf;
-
-      // Find the next free slot by walking the nodes next to ref
-      // This will point to before the next largest node
-      let it = nodes.findIterator(node);
-      // Leave room for possible previous branch end by going one back
-      if (it.hasPrevious()) it = it.previous();
-      // Give HEAD some room
-      let mySlot = ref.isLocalHEAD ? -1 : 1;
-      let val;
-      let i = 0;
-      while (i < 100 && it.hasNext()) {
-        i++;
-        val = it.value();
-        const slot = val.slot();
-        if (slot > maxSlot) maxSlot = slot;
-        if (slot > mySlot) mySlot = slot;
-        if (comparator(until, val) > 0) break;
+      // If one of the parents of a node is below the branch start,
+      // it counts as an occupied slot, so we start at 0
+      let it = nodes.beginIterator();
+      // Give HEAD some room by slotting other branches from 2
+      let localMaxSlot = ref.isLocalHEAD ? -1 : 1;
+      let placed, prev;
+      let passedBranchTop = false;
+      while (it.hasNext()) {
+        placed = /** @type {GraphNode} */ (it.value());
         it = it.next();
+        if (!passedBranchTop) {
+          if (comparator(first, placed) < 0) {
+            // We passed our branch head
+            // From now on, every node counts
+            passedBranchTop = true;
+            // Make room for the prev node tail
+            if (prev && prev.slot() > localMaxSlot) localMaxSlot = prev.slot();
+          } else if (!placed.parents().some((p) => comparator(first, p) < 0))
+            // This node doesn't influence maxSlot
+            continue;
+        }
+        const slot = placed.slot();
+        if (slot > localMaxSlot) localMaxSlot = slot;
+        if (comparator(last, placed) < 0) break;
+        prev = placed;
       }
-      mySlot++;
-      // Now insert the branch and move it to its slot
-      const putBranch = (node) => {
-        if (sortedSeen.has(node)) return;
-        node.slot(node.slot() + mySlot);
+      localMaxSlot++;
+      if (maxSlot < localMaxSlot) maxSlot = localMaxSlot;
+      // Now place the line of commits
+      node = first;
+      do {
+        node.slot(localMaxSlot);
         nodes.insert(node);
-        sortedSeen.add(node);
-        for (const next of node.parents()) putBranch(next);
-      };
-      putBranch(node);
-      lastRef = ref;
+        if (node === last) break;
+        node = node.parents()[0];
+      } while (node);
     }
 
     // TODO probably better to keep sortedNodes and store the index

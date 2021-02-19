@@ -121,7 +121,7 @@ class Reset extends ActionBase {
         if (!diag.result()) return;
         return this.server
           .postPromise('/reset', { path: this.graph.repoPath(), to: remoteRef.name, mode: 'hard' })
-          .then(() => {
+          .then((sha1) => {
             context.node(remoteRef.node());
           });
       }).closePromise;
