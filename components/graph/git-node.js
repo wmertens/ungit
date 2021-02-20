@@ -15,17 +15,18 @@ class GitNodeViewModel extends Animateable {
     this.sha1 = /** @type {Hash} */ sha1;
     /* calcNodes data */
     this.order = -1;
+    this.line = -1;
     this.slot = ko.observable(0);
-    this.aboveNode = undefined;
-    this.belowNode = undefined;
+    this.aboveNode = /** @type {GraphNode} */ (null);
+    this.belowNode = /** @type {GraphNode} */ (null);
     this.ideologicalBranch = ko.observable(/** @type {GraphRef} */ (null));
     /* calcNodes data end */
     this.isInited = ko.observable(false);
-    this.title = ko.observable();
+    this.title = ko.observable('');
     this.parents = ko.observableArray(/** @type {GraphNode[]} */ ([]));
-    this.commitTime = undefined; // commit time in string
-    this.date = undefined; // commit time in numeric format for sort
-    this.color = ko.observable();
+    this.commitTime = ''; // commit time in string
+    this.date = /** @type {number} */ (null); // commit time in numeric format for sort
+    this.color = ko.observable('');
     this.remoteTags = ko.observableArray(/** @type {GraphRef[]} */ ([]));
     this.branchesAndLocalTags = ko.observableArray(/** @type {GraphRef[]} */ ([]));
     this.signatureDate = ko.observable();

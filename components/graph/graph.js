@@ -5,7 +5,6 @@ const components = require('ungit-components');
 const GitNodeViewModel = require('./git-node');
 const GitRefViewModel = require('./git-ref');
 const EdgeViewModel = require('./edge');
-const SortedSet = require('js-sorted-set');
 const numberOfNodesPerLoad = ungit.config.numberOfNodesPerLoad;
 
 components.register('graph', (args) => new GraphViewModel(args.server, args.repoPath));
@@ -148,26 +147,29 @@ class GraphViewModel {
    */
   computeNodes() {
     // TODO only re-run if selected branches or gotten nodes changed
-
+    const startTs = Date.now();
     /**
      * Sorted collection of nodes
      * Sort commits by descending date
      * Note: output 0 means nodes are the same and are stored only once
-     * */
+     *
+     * We use an array here, this is fast for 100-1000 nodes.
+     * For bigger graphs we should consider one of the strategies in js-sorted-set.
+     */
     const comparator = (/** @type {GraphNode} */ a, /** @type {GraphNode} */ b) => {
       if (a === b) return 0;
       if (a.sha1 === b.sha1) {
         console.log(a, b, 'are different but the same');
         return 0;
       }
+      // parents always sort below, children always sort above
+      // note that we don't check transitively!
       if (a.parents().includes(b)) return -1;
       if (b.parents().includes(a)) return 1;
-      const refA = a.ideologicalBranch();
-      const refB = b.ideologicalBranch();
       // Since we initialize order before inserting, this should never clash
       const orderDiff = a.order - b.order;
-      // Make sure same-branch-slot commits are in walk order, ignoring date
-      if (refA === refB && a.slot() === b.slot()) return orderDiff;
+      // Make sure same-line commits are in walk order, ignoring date
+      if (a.line === b.line) return orderDiff;
       // Otherwise order by descending date if known
       if (a.date && b.date) {
         const diff = b.date - a.date;
@@ -176,7 +178,8 @@ class GraphViewModel {
       }
       return orderDiff;
     };
-    const nodes = new SortedSet({ comparator });
+    /** @type {GraphNode[]} */
+    const nodes = [];
 
     let maxSlot = 0;
 
@@ -203,113 +206,152 @@ class GraphViewModel {
       });
     if (!refs.length) return;
 
-    // Walk nodes in straight lines, then place them
+    // Walk all nodes in straight lines, marking tops
     let nodeCount = 0;
+    let lineCount = 0;
     const seen = new WeakSet();
+    const tops = new WeakSet();
     /** @type {{ node: GraphNode; ref: GraphRef }[]} */
     const toWalk = [];
     for (const ref of refs) {
-      toWalk.push({ node: ref.node(), ref });
+      const node = ref.node();
+      tops.add(node);
+      toWalk.push({ node, ref });
     }
+    /** @type {{ start: GraphNode; stop: GraphNode }[]} */
+    const lines = [];
     while (toWalk.length) {
       // eslint-disable-next-line prefer-const
       let { node, ref } = toWalk.shift();
       if (seen.has(node)) continue;
-      // Special case: skip branches without loaded node
-      if (node === ref.node() && !node.isInited()) {
-        this.missingNodes.add(node.sha1);
-        continue;
-      }
 
-      // Walk the leftmost tree to its end
-      const first = node;
-      let last = node;
+      // Walk the leftmost path to its end
+      // TODO push lines on array, figure out isRoot
+      lineCount++;
+      const start = node;
+      let stop = node;
       do {
         node.order = nodeCount++;
+        node.line = lineCount;
         node.ideologicalBranch(ref);
         seen.add(node);
         if (!node.isInited()) this.missingNodes.add(node.sha1);
         const parents = node.parents();
         for (let i = parents.length - 1; i >= 0; i--) {
           const p = parents[i];
+          tops.delete(p);
           // Sort missing nodes immediately below last child
           if (!p.isInited() && (!p.date || p.date >= node.date)) p.date = node.date - 1;
           // Walk extra parents later
           if (i) toWalk.unshift({ node: p, ref });
         }
-        last = node;
+        stop = node;
         node = parents[0];
       } while (node && !seen.has(node));
+      lines.push({ start, stop });
+    }
 
-      // Find the next free slot by walking the nodes next to ref, from the first
-
+    // Possibly we can move unconnected branches to the top or right
+    for (const { start, stop } of lines) {
+      // Find the next free slot by walking the nodes next to the line
       // If one of the parents of a node is below the branch start,
-      // it counts as an occupied slot, so we start at 0
-      let it = nodes.beginIterator();
+      // it counts as an occupied slot, so we start at 0.
+      // While walking, we insert the nodes in their right spot
+      // Afterwards, we set their slot.
+
       // Give HEAD some room by slotting other branches from 2
-      let localMaxSlot = ref.isLocalHEAD ? -1 : 1;
+      let localMaxSlot = start.ideologicalBranch().isLocalHEAD ? -1 : 1;
       let placed, prev;
+      let inserting = start;
       let passedBranchTop = false;
-      while (it.hasNext()) {
-        placed = /** @type {GraphNode} */ (it.value());
-        it = it.next();
+      const isConnected = !tops.has(start);
+
+      // Special case: skip branches without loaded node
+      if (!isConnected && !start.isInited()) {
+        continue;
+      }
+
+      let i = 0;
+      const insertNodesIfBefore = (placed, insertAll) => {
+        while (inserting && (insertAll || comparator(inserting, placed) < 0)) {
+          // TODO insert chunks in one go
+          nodes.splice(i - 1, 0, inserting);
+          i++;
+          if (inserting === stop) inserting = null;
+          else inserting = inserting.parents()[0];
+        }
+      };
+      while (i < nodes.length) {
+        placed = nodes[i++];
         if (!passedBranchTop) {
-          if (comparator(first, placed) < 0) {
+          if (isConnected ? placed.parents().includes(start) : comparator(start, placed) < 0) {
             // We passed our branch head
             // From now on, every node counts
             passedBranchTop = true;
             // Make room for the prev node tail
             if (prev && prev.slot() > localMaxSlot) localMaxSlot = prev.slot();
-          } else if (!placed.parents().some((p) => comparator(first, p) < 0))
+          } else if (!placed.parents().some((p) => comparator(start, p) < 0))
             // This node doesn't influence maxSlot
             continue;
         }
         const slot = placed.slot();
         if (slot > localMaxSlot) localMaxSlot = slot;
-        if (comparator(last, placed) < 0) break;
+        if (passedBranchTop) insertNodesIfBefore(placed);
+        // Did we pass our last node?
+        if (comparator(stop, placed) < 0) {
+          insertNodesIfBefore(placed, true);
+          break;
+        }
         prev = placed;
+      }
+      while (inserting) {
+        nodes.push(inserting);
+        if (inserting === stop) break;
+        else inserting = inserting.parents()[0];
       }
       localMaxSlot++;
       if (maxSlot < localMaxSlot) maxSlot = localMaxSlot;
       // Now place the line of commits
-      node = first;
+      let node = start;
       do {
         node.slot(localMaxSlot);
-        nodes.insert(node);
-        if (node === last) break;
+        if (node === stop) break;
         node = node.parents()[0];
       } while (node);
     }
 
-    // TODO probably better to keep sortedNodes and store the index
     /** @type {GraphNode} */
     let prevNode;
-    /** @type {GraphNode[]} */
-    const sortedNodes = nodes.map((f) => f);
-    for (const node of sortedNodes) {
+    let maxY = 0;
+    for (const node of nodes) {
+      // Maybe it's better to store the index, to consider later
       node.aboveNode = prevNode;
       if (prevNode) prevNode.belowNode = node;
+      node.render();
+      if (maxY < node.cy()) maxY = node.cy();
       prevNode = node;
     }
     if (prevNode) prevNode.belowNode = null;
 
     const edges = [];
-    let maxY = 0;
-    for (const node of sortedNodes) {
+    for (const node of nodes) {
       for (const parent of node.parents()) {
         edges.push(this.getEdge(node.sha1, parent.sha1));
       }
-      node.render();
-      if (maxY < node.cy()) maxY = node.cy();
     }
 
+    const calcTs = Date.now();
     this.edges(edges);
-    this.nodes(sortedNodes);
+    this.nodes(nodes);
 
-    if (sortedNodes.length > 0) {
-      this.graphHeight(maxY + 80);
-    }
+    this.graphHeight(maxY + 80);
     this.graphWidth(1000 + maxSlot * 90);
+    const layoutTs = Date.now();
+    console.log(
+      `computeNodes: ${nodes.length} nodes, calc ${calcTs - startTs}ms, layout ${
+        layoutTs - startTs
+      }ms`
+    );
   }
 
   getEdge(nodeAsha1, nodeBsha1) {
