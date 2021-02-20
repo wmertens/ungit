@@ -21,6 +21,7 @@ class CommitViewModel {
     this.commitTime = ko.observable();
     this.authorTime = ko.observable();
     this.message = ko.observable();
+    this.commitDiff = ko.observable();
     this.title = ko.observable();
     this.body = ko.observable();
     this.authorDate = ko.observable(/** @type {moment.Moment} */ (null));
@@ -63,7 +64,7 @@ class CommitViewModel {
     this.numberOfRemovedLines(args.deletions);
     this.fileLineDiffs(args.fileLineDiffs);
     this.isInited(true);
-    this.commitDiff = ko.observable(
+    this.commitDiff(
       components.create('commitDiff', {
         fileLineDiffs: this.fileLineDiffs(),
         sha1: this.sha1,
