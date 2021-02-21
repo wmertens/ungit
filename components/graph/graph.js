@@ -5,7 +5,6 @@ const components = require('ungit-components');
 const GitNodeViewModel = require('./git-node');
 const GitRefViewModel = require('./git-ref');
 const EdgeViewModel = require('./edge');
-const numberOfNodesPerLoad = ungit.config.numberOfNodesPerLoad;
 
 components.register('graph', (args) => new GraphViewModel(args.server, args.repoPath));
 
@@ -13,12 +12,12 @@ class GraphViewModel {
   constructor(server, repoPath) {
     this._markIdeologicalStamp = 0;
     this.repoPath = repoPath;
-    this.limit = ko.observable(numberOfNodesPerLoad);
     this.skip = ko.observable(0);
     this.server = server;
     this.currentRemote = ko.observable();
     this.nodes = ko.observableArray(/** @type {GraphNode[]} */ ([]));
-    this.missingNodes = new Set();
+    this.missingNodes = /** @type {Set<GraphNode>} */ (new Set());
+    this.didFetch = false;
     this.logNodes = [];
     this.edges = ko.observableArray(/** @type {GraphEdge[]} */ ([]));
     this.refs = ko.observableArray(/** @type {GraphRef[]} */ ([]));
@@ -105,26 +104,41 @@ class GraphViewModel {
   // TODO on startup, fetch HEAD only, then fetch missing on-screen nodes
   // when they scroll into view
   async fetchCommits() {
-    this.missingNodes.clear();
-    this.computeNodes();
-    console.log('missing %d nodes', this.missingNodes.size);
-    if (!this.missingNodes.size) return;
-    const nodeSize = this.nodesById.size;
+    if (!this.didFetch) this.computeNodes();
+    const numMissing = this.missingNodes.size;
+    console.log('missing %d nodes', numMissing);
+    if (!numMissing) return;
+    const limit = this.didFetch ? 10 : 60;
+    const numNodes = this.nodesById.size;
     try {
+      let toFetch = [...this.missingNodes.values()];
+      if (this.didFetch) {
+        toFetch.sort((a, b) => {
+          const yA = a.cy();
+          if (isNaN(yA)) return 1;
+          const yB = b.cy();
+          if (isNaN(yB)) return -1;
+          return a.cy() - b.cy();
+        });
+        const minY = window.screen.height + window.scrollY;
+        const pastVisibleIdx = toFetch.findIndex((n) => n.cy() > minY);
+        toFetch = toFetch.slice(0, Math.max(pastVisibleIdx - 1, 2));
+      }
       const commits = await this.server.getPromise('/commits', {
         path: this.repoPath(),
-        limit: this.limit(),
-        ids: [...this.missingNodes.values()].join(),
+        limit,
+        ids: toFetch.map((n) => n.sha1).join(),
       });
       for (const c of commits) {
-        this.getNode(c.sha1, c);
-        this.missingNodes.delete(c.sha1);
+        const node = this.getNode(c.sha1, c);
+        this.missingNodes.delete(node);
       }
       this.computeNodes();
+      this.didFetch = true;
     } catch (e) {
       this.server.unhandledRejection(e);
     } finally {
-      if (window.innerHeight - this.graphHeight() > 0 && nodeSize != this.nodesById.size) {
+      if (window.innerHeight - this.graphHeight() > 0 && numNodes != this.nodesById.size) {
         this.scrolledToEnd();
       }
     }
@@ -235,7 +249,7 @@ class GraphViewModel {
         node.line = lineCount;
         node.ideologicalBranch(ref);
         seen.add(node);
-        if (!node.isInited()) this.missingNodes.add(node.sha1);
+        if (!node.isInited()) this.missingNodes.add(node);
         const parents = node.parents();
         for (let i = parents.length - 1; i >= 0; i--) {
           const p = parents[i];
