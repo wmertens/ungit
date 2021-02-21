@@ -34,7 +34,7 @@ class BranchesViewModel {
     this.refsLabel = ko.computed(() => this.current() || 'master (no commits yet)');
     this.branchIcon = octicons['git-branch'].toSVG({ height: 18 });
     this.closeIcon = octicons.x.toSVG({ height: 18 });
-    this.updateRefsDebounced = _.debounce(this.updateRefs, 500);
+    this.updateRefsDebounced = _.throttle(this.updateRefs, 500);
     this.updateRefsDebounced();
     this.updateRefsDebounced.flush();
     this.firstFetch = true;

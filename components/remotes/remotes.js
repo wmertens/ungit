@@ -28,7 +28,7 @@ class RemotesViewModel {
     // don't block initial load
     setTimeout(() => this.updateRemotes(), 200);
     this.isFetching = false;
-    this.fetchDebounced = _.debounce(() => this.fetch({ tags: true }), 500);
+    this.fetchDebounced = _.throttle(() => this.fetch({ tags: true }), 500);
   }
 
   updateNode(parentElement) {
