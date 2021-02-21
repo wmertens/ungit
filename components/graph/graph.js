@@ -37,8 +37,6 @@ class GraphViewModel {
     this.showCommitNode = ko.observable(false);
     this.currentActionContext = ko.observable();
     this.edgesById = {};
-    this.scrolledToEnd = _.debounce(() => this.fetchCommits(), 500, true);
-    this.loadAhead = _.debounce(() => this.fetchCommits(), 500, true);
     this.commitOpacity = ko.observable(1.0);
     this.hoverGraphActionGraphic = ko.observable();
     this.hoverGraphActionGraphic.subscribe(
@@ -58,8 +56,10 @@ class GraphViewModel {
       }
     });
 
-    this.loadNodesFromApiThrottled = _.throttle(this.fetchCommits.bind(this), 1000);
-    this.updateBranchesThrottled = _.throttle(this.updateBranches.bind(this), 1000);
+    this.loadNodesFromApiThrottled = _.throttle(this.fetchCommits.bind(this), 100);
+    this.updateBranchesThrottled = _.throttle(this.updateBranches.bind(this), 100);
+    this.scrolledToEnd = this.loadNodesFromApiThrottled;
+    this.loadAhead = this.loadNodesFromApiThrottled;
     this.updateBranches();
     this.graphWidth = ko.observable();
     this.graphHeight = ko.observable(800);
