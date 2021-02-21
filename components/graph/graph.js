@@ -101,8 +101,6 @@ class GraphViewModel {
     return refViewModel;
   }
 
-  // TODO on startup, fetch HEAD only, then fetch missing on-screen nodes
-  // when they scroll into view
   async fetchCommits() {
     if (!this.didFetch) this.computeNodes();
     const numMissing = this.missingNodes.size;
@@ -134,7 +132,11 @@ class GraphViewModel {
         this.missingNodes.delete(node);
       }
       this.computeNodes();
-      this.didFetch = true;
+      if (!this.didFetch) {
+        this.didFetch = true;
+        // Make sure we load on-screen missing commits
+        await this.fetchCommits();
+      }
     } catch (e) {
       this.server.unhandledRejection(e);
     } finally {
