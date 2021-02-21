@@ -408,8 +408,9 @@ exports.registerApi = (env) => {
     ensureAuthenticated,
     ensurePathExists,
     jw(async (req) => {
-      const limit = getNumber(req.query.limit, config.numberOfNodesPerLoad || 25);
-      const ids = (req.query.ids || '').split(',');
+      let { limit, ids } = req.query;
+      limit = getNumber(limit, config.numberOfNodesPerLoad || 25);
+      ids = typeof ids === 'string' && ids ? ids.split(',') : [];
       if (!ids.length) return [];
       const nodes = await req.repo.log(limit, 0, ids);
       return nodes;
