@@ -276,14 +276,15 @@ class GraphViewModel {
       // Afterwards, we set their slot.
 
       // Give HEAD some room by slotting other branches from 2
-      let localMaxSlot = start.ideologicalBranch().isLocalHEAD ? -1 : 1;
+      const isHeadBranch = start.ideologicalBranch().isLocalHEAD;
+      let localMaxSlot = isHeadBranch ? -1 : 1;
       let placed, prev;
       let inserting = start;
       let passedBranchTop = false;
       const isConnected = !tops.has(start);
 
-      // Special case: skip branches without loaded node
-      if (!isConnected && !start.isInited()) {
+      // Special case: skip branches without loaded node, except HEAD
+      if (!isConnected && !start.isInited() && !isHeadBranch) {
         continue;
       }
 
