@@ -262,13 +262,15 @@ class NGWrap {
     const refs = await this.r.getReferences().catch(normalizeError);
     /** @type {Ref[]} */
     const out = await Promise.all(
-      refs.map(async (ref) => ({
-        name: ref.name(),
-        sha1: `${ref.isTag() ? (await ref.peel(1)).id() : ref.target()}`,
-      }))
+      refs.map(async (ref) => {
+        const sha1 = `${ref.isTag() ? (await ref.peel(1)).id() : ref.target()}`;
+        const commit = await this.r.getCommit(sha1);
+        const date = commit.date().toJSON();
+        return { name: ref.name(), sha1, date };
+      })
     );
     const head = await this.r.getHeadCommit();
-    if (head) out.unshift({ name: 'HEAD', sha1: head.sha() });
+    if (head) out.unshift({ name: 'HEAD', sha1: head.sha(), date: head.date().toJSON() });
     return out;
   }
 

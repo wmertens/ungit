@@ -283,10 +283,10 @@ class GraphViewModel {
       let passedBranchTop = false;
       const isConnected = !tops.has(start);
 
-      // Special case: skip branches without loaded node, except HEAD
-      if (!isConnected && !start.isInited() && !isHeadBranch) {
-        continue;
-      }
+      // // Special case: skip branches without loaded node, except HEAD
+      // if (!isConnected && !start.isInited() && !isHeadBranch) {
+      //   continue;
+      // }
 
       let i = 0;
       const insertNodesIfBefore = (placed, insertAll) => {

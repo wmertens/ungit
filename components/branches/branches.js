@@ -76,10 +76,16 @@ class BranchesViewModel {
         this.firstFetch = false;
         const stamp = Date.now();
         const locals = [];
-        for (const { name, sha1 } of refs) {
+        for (const { name, sha1, date } of refs) {
           const lname = name.replace('refs/tags', 'tag: refs/tags');
           // side effect: registers the ref
           const ref = this.graph.getRef(lname, sha1);
+          const node = ref.node();
+          if (date && !node.isInited()) {
+            const ts = Date.parse(date);
+            // Push down uninited nodes based on date
+            if (!node.date || node.date > ts) node.date = ts;
+          }
           ref.stamp = stamp;
           const { localRefName, isRemote, isBranch, isTag } = ref;
           if (

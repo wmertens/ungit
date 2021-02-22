@@ -44,7 +44,7 @@ type FileStatus = {
   additions?: number;
   deletions?: number;
 };
-type Ref = { name: RefName; current?: boolean; sha1?: Hash; remote?: string };
+type Ref = { name: RefName; current?: boolean; sha1?: Hash; remote?: string; date?: Date };
 type QuickStatus = {
   gitRootPath: string;
   type: 'inited' | 'uninited' | 'bare' | 'no-such-path';
