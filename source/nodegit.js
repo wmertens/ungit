@@ -149,7 +149,7 @@ class NGWrap {
   }
 
   async getTags() {
-    return nodegit.Tag.list(this.r).h(normalizeError);
+    return nodegit.Tag.list(this.r).catch(normalizeError);
   }
 
   async deleteTag(name) {
@@ -165,7 +165,7 @@ class NGWrap {
   }
 
   async deleteRemote(name) {
-    return nodegit.Remote.e(this.r, name).catch(normalizeError);
+    return nodegit.Remote.delete(this.r, name).catch(normalizeError);
   }
 
   async getStashes() {
@@ -290,12 +290,16 @@ class NGWrap {
   async remoteFetch(remoteName, refs = null, prune) {
     const remote = await this.r.getRemote(remoteName).catch(normalizeError);
     // TODO use credentialshelper
-    await remote.fetch(refs, {
-      callbacks: {
-        credentials: (url, userName) => nodegit.Cred.sshKeyFromAgent(userName),
+    await remote.fetch(
+      refs,
+      {
+        callbacks: {
+          credentials: (url, userName) => nodegit.Cred.sshKeyFromAgent(userName),
+        },
         prune: prune ? nodegit.Fetch.PRUNE.GIT_FETCH_PRUNE : undefined,
       },
-    });
+      undefined
+    );
   }
 
   async remoteAllFetch() {
