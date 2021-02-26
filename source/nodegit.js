@@ -72,40 +72,6 @@ const formatCommit = (c) => {
   return out;
 };
 
-// TODO whitespace
-/** @param {nodegit.Commit} c */
-const getFileStats = async (c, isStash) => {
-  const diffs = await c.getDiff();
-  // One diff per parent, we only diff against parent 0
-  // TODO figure out stash diffs: staged vs unstaged vs new
-  const diff = diffs[0];
-  // Find renames, compact diff
-  await diff.findSimilar({ flags: nodegit.Diff.FIND.RENAMES });
-  const stat = await diff.getStats();
-  const additions = stat.insertions();
-  const deletions = stat.deletions();
-
-  const patches = await diff.patches();
-  /** @type{DiffStat[]} */
-  const fileLineDiffs = patches.map((p, patchNum) => {
-    const fileName = p.isDeleted() ? p.oldFile().path() : p.newFile().path();
-    const oldFileName = p.isAdded() ? fileName : p.oldFile().path();
-    const displayName = p.isRenamed() ? `${oldFileName} → ${fileName}` : fileName;
-    const { total_additions, total_deletions } = p.lineStats();
-
-    return {
-      oldFileName, // TODO only when renamed or deleted
-      fileName, // TODO not if deleted
-      displayName, // TODO client-side
-      patchNum,
-      additions: total_additions,
-      deletions: total_deletions,
-      type: fileType(fileName || oldFileName),
-    };
-  });
-  return { additions, deletions, fileLineDiffs };
-};
-
 class NGWrap {
   constructor(ngRepo) {
     /** @type {nodegit.Repository} */
@@ -179,7 +145,7 @@ class NGWrap {
     /** @type {Commit[]} */
     return Promise.all(
       stashes.map(async (stash, index) => ({
-        ...(await getFileStats(stash)),
+        ...(await this.getDiff({ commit: stash })),
         ...formatCommit(stash),
         reflogId: `${index}`,
         reflogName: `stash@{${index}}`,
@@ -250,7 +216,7 @@ class NGWrap {
     // TODO only keep formatCommit, the stats should go in a details call
     /** @type {Commit[]} */
     const result = await Promise.all(
-      commits.map(async (c) => ({ ...(await getFileStats(c)), ...formatCommit(c) }))
+      commits.map(async (c) => ({ ...(await this.getDiff({ commit: c })), ...formatCommit(c) }))
     );
     return result;
   }
@@ -331,6 +297,75 @@ class NGWrap {
     }
     return out;
   }
+
+  // TODO whitespace
+  /**
+   * Get changes between oldOid and oid.
+   * You can pass the commit instead of oid.
+   * If oldOid is `null`, the entire tree of oid is shown.
+   * If oldOid is falsy, the commit's leftmost parent is assumed.
+   *
+   * @param {{
+   *   commit?: nodegit.Commit;
+   *   oid?: string | nodegit.Oid;
+   *   oldOid?: string | nodegit.Oid;
+   *   whitespace?: boolean;
+   * }} arg
+   */
+  async getDiff({ commit, oid, oldOid }) {
+    if (oid) {
+      // TODO index, worktree
+      commit = await this.r.getCommit(oid);
+      if (!commit) throw new Error(`No commit ${oid}`);
+    } else {
+      oid = commit.id();
+    }
+    if (!commit) throw new Error('need commit or oid');
+
+    const newTree = await commit.getTree();
+    let oldTree;
+
+    if (!oldOid && oldOid !== null) {
+      oldOid = (await commit.parents()[0]) || null;
+    }
+    if (oldOid) {
+      const oC = await this.r.getCommit(oldOid);
+      if (!oC) throw new Error(`No commit oldOid ${oid}`);
+      oldTree = await oC.getTree();
+    }
+
+    // TODO expiring cache keyed on oids
+    // const key = `${oid}/${oldOid}`;
+    const diff = await nodegit.Diff.treeToTree(this.r, oldTree, newTree);
+    // Find renames, compact diff
+    await diff.findSimilar({ flags: nodegit.Diff.FIND.RENAMES });
+    const stat = await diff.getStats();
+    const additions = +stat.insertions();
+    const deletions = +stat.deletions();
+
+    const patches = await diff.patches();
+    /** @type{DiffStat[]} */
+    const fileLineDiffs = patches.map((p, patchNum) => {
+      const fileName = p.isDeleted() ? p.oldFile().path() : p.newFile().path();
+      const oldFileName = p.isAdded() ? fileName : p.oldFile().path();
+      const displayName = p.isRenamed() ? `${oldFileName} → ${fileName}` : fileName;
+      const { total_additions, total_deletions } = p.lineStats();
+
+      return {
+        oldFileName, // TODO only when renamed or deleted
+        fileName, // TODO not if deleted
+        displayName, // TODO client-side
+        patchNum,
+        additions: total_additions,
+        deletions: total_deletions,
+        type: fileType(fileName || oldFileName),
+      };
+    });
+    return { additions, deletions, fileLineDiffs };
+  }
+
+  // TODO async getStashDiff() {}
+  // TODO async getStagingDiff() {}
 
   // TODO if no hash compare worktree/index+stashed
   // TODO vs other hash
