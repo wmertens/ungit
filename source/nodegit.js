@@ -354,7 +354,7 @@ class NGWrap {
       const lines = await hunk.lines();
       text.push(
         hunk.header().trim(),
-        ...lines.map((line) => `${String.fromCharCode(line.origin())}${line.content().trim()}`)
+        ...lines.map((line) => `${String.fromCharCode(line.origin())}${line.content()}`)
       );
     }
     return text.join('\n');
