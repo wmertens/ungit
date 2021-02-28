@@ -149,7 +149,7 @@ class StagingViewModel {
       this.server
         .getPromise('/status', { path: this.repoPath(), fileLimit: filesToDisplayLimit })
         .then((/** @type {GitStatus} */ status) => {
-          if (Object.keys(status.files).length > filesToDisplayLimit && !this.loadAnyway) {
+          if (status.worktree.fileLineDiffs.length > filesToDisplayLimit && !this.loadAnyway) {
             if (this.isDiagOpen) {
               return;
             }
@@ -182,7 +182,7 @@ class StagingViewModel {
   }
 
   loadStatus(/** @type {GitStatus} */ status) {
-    this.setFiles(status.files);
+    this.setFiles(status.worktree);
     this.inRebase(!!status.inRebase);
     this.inMerge(!!status.inMerge);
     // There are time where '.git/CHERRY_PICK_HEAD' file is created and no files are in conflicts.
@@ -202,23 +202,21 @@ class StagingViewModel {
     }
   }
 
-  setFiles(/** @type {GitStatus['files']} */ files) {
+  setFiles(/** @type {GitStatus['worktree']} */ worktree) {
     const newFiles = [];
-    for (const fileStatus of Object.values(files)) {
+    for (const fileStatus of worktree.fileLineDiffs) {
       let fileViewModel = this.filesByPath[fileStatus.fileName];
       if (!fileViewModel) {
         this.filesByPath[fileStatus.fileName] = fileViewModel = new FileViewModel(
           this,
-          fileStatus.fileName,
-          fileStatus.oldFileName,
-          fileStatus.displayName
+          fileStatus,
+          worktree.diffKey
         );
       } else {
         // this is mainly for patching and it may not fire due to the fact that
         // '/commit' triggers working-tree-changed which triggers throttled refresh
         fileViewModel.diff().invalidateDiff();
       }
-      fileViewModel.setState(fileStatus);
       newFiles.push(fileViewModel);
     }
     this.files(newFiles);
@@ -397,20 +395,34 @@ class StagingViewModel {
 }
 
 class FileViewModel {
-  constructor(staging, name, oldName, displayName) {
+  constructor(staging, /** @type {DiffStat} */ data, diffKey) {
+    const { fileName, oldFileName } = data;
     this.staging = staging;
     this.server = staging.server;
     this.editState = ko.observable('staged'); // staged, patched and none
-    this.name = ko.observable(name);
-    this.oldName = ko.observable(oldName);
-    this.displayName = ko.observable(displayName);
-    this.isNew = ko.observable(false);
-    this.removed = ko.observable(false);
-    this.conflict = ko.observable(false);
-    this.renamed = ko.observable(false);
+    this.name = ko.observable(fileName);
+    this.oldName = ko.observable(oldFileName);
+    this.idx = data.idx;
+    this.diffKey = diffKey;
+
+    this.displayName = ko.computed(() =>
+      this.name()
+        ? this.oldName()
+          ? this.oldName() !== this.name()
+            ? `${this.oldName()} → ${this.name()}`
+            : this.name()
+          : `[new] ${this.name()}`
+        : `[del] ${this.oldName()}`
+    );
+    this.isNew = ko.observable(!oldFileName);
+    this.removed = ko.observable(!fileName);
+    this.conflict = ko.observable(data.hasConflict);
+    this.renamed = ko.observable(
+      data.oldFileName && data.fileName && data.oldFileName !== data.fileName
+    );
     this.isShowingDiffs = ko.observable(false);
-    this.additions = ko.observable('');
-    this.deletions = ko.observable('');
+    this.additions = ko.observable(data.additions != null ? `+${data.additions}` : '');
+    this.deletions = ko.observable(data.deletions != null ? `-${data.deletions}` : '');
     this.modified = ko.computed(() => {
       // only show modfied whe not removed, not conflicted, not new, not renamed
       // and length of additions and deletions is 0.
@@ -422,9 +434,9 @@ class FileViewModel {
         this.deletions().length === 0
       );
     });
-    this.fileType = ko.observable('text');
+    this.fileType = ko.observable(data.type);
     this.patchLineList = ko.observableArray();
-    this.diff = ko.observable();
+    this.diff = ko.observable(this.getSpecificDiff());
     this.isShowPatch = ko.computed(
       () =>
         // if not new file
@@ -451,10 +463,18 @@ class FileViewModel {
 
   getSpecificDiff() {
     return components.create(!this.name() || `${this.fileType()}diff`, {
+      repoPath: this.staging.repoPath,
+
+      diffKey: this.diffKey,
+      idx: this.idx,
+
       filename: this.name(),
       oldFilename: this.oldName(),
-      displayFilename: this.displayName(),
-      repoPath: this.staging.repoPath,
+
+      isNew: this.isNew(),
+      removed: this.removed(),
+      conflict: this.conflict(),
+
       server: this.server,
       textDiffType: this.staging.textDiffType,
       whiteSpace: this.staging.whiteSpace,
@@ -463,24 +483,6 @@ class FileViewModel {
       editState: this.editState,
       wordWrap: this.staging.wordWrap,
     });
-  }
-
-  setState(state) {
-    this.displayName(state.displayName);
-    this.isNew(state.isNew);
-    this.removed(state.removed);
-    this.conflict(state.conflict);
-    this.renamed(state.renamed);
-    this.fileType(state.type);
-    this.additions(state.additions != null ? `+${state.additions}` : '');
-    this.deletions(state.deletions != null ? `-${state.deletions}` : '');
-    if (this.diff()) {
-      this.diff().invalidateDiff();
-    } else {
-      this.diff(this.getSpecificDiff());
-    }
-    if (this.diff().isNew) this.diff().isNew(state.isNew);
-    if (this.diff().isRemoved) this.diff().isRemoved(state.removed);
   }
 
   toggleStaged() {
