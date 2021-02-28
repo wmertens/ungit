@@ -142,14 +142,27 @@ class NGWrap {
     const stashes = await Promise.all(
       oids.map((oid) => this.r.getCommit(oid).catch(normalizeError))
     );
-    /** @type {Commit[]} */
+
     return Promise.all(
-      stashes.map(async (stash, index) => ({
-        ...(await this.getDiff({ commit: stash })),
-        ...formatCommit(stash),
-        reflogId: `${index}`,
-        reflogName: `stash@{${index}}`,
-      }))
+      stashes.map(async (stash, index) => {
+        let newFiles;
+        const newFilesOid = stash.parents()[2];
+        if (newFilesOid) {
+          const newC = await this.r.getCommit(newFilesOid);
+          newFiles = {
+            sha1: newC.sha(),
+            ...(await this.getDiff({ commit: newC })),
+          };
+          if (!newFiles.fileLineDiffs.length) newFiles = undefined;
+        }
+        return /** @type {Commit & { newFiles?: Commit }} */ ({
+          ...(await this.getDiff({ commit: stash })),
+          ...formatCommit(stash),
+          newFiles,
+          reflogId: `${index}`,
+          reflogName: `stash@{${index}}`,
+        });
+      })
     );
   }
 
@@ -364,7 +377,6 @@ class NGWrap {
     return { additions, deletions, fileLineDiffs };
   }
 
-  // TODO async getStashDiff() {}
   // TODO async getStagingDiff() {}
 
   // TODO if no hash compare worktree/index+stashed
