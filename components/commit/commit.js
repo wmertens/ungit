@@ -67,7 +67,7 @@ class CommitViewModel {
     this.commitDiff(
       components.create('commitDiff', {
         fileLineDiffs: this.fileLineDiffs(),
-        sha1: this.sha1,
+        diffKey: args.diffKey,
         repoPath: this.repoPath,
         server: this.server,
         showDiffButtons: this.selected,

@@ -7,7 +7,7 @@ components.register('commitDiff', (args) => new CommitDiff(args));
 class CommitDiff {
   constructor(args) {
     this.commitLineDiffs = ko.observableArray();
-    this.sha1 = args.sha1;
+    this.diffKey = args.diffKey;
 
     this.showDiffButtons = args.showDiffButtons;
     this.textDiffType = args.textDiffType = args.textDiffType || components.create('textdiff.type');
@@ -22,15 +22,13 @@ class CommitDiff {
   }
 
   loadFileLineDiffs(args) {
-    const tempCommitLineDiffs = [];
-    const lineDiffLength = this.commitLineDiffs().length;
     if (!args.fileLineDiffs) return;
-    args.fileLineDiffs
-      .slice(lineDiffLength === 0 ? 0 : lineDiffLength + 1, this.maxNumberOfFilesShown)
-      .forEach((fileLineDiff) => {
-        tempCommitLineDiffs.push(new CommitLineDiff(args, fileLineDiff));
-      });
+    const lines = args.fileLineDiffs;
 
-    this.commitLineDiffs(this.commitLineDiffs().concat(tempCommitLineDiffs));
+    this.commitLineDiffs(
+      this.commitLineDiffs().concat(
+        lines.map((fileLineDiff) => new CommitLineDiff(args, fileLineDiff))
+      )
+    );
   }
 }

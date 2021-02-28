@@ -76,6 +76,8 @@ class NGWrap {
   constructor(ngRepo) {
     /** @type {nodegit.Repository} */
     this.r = ngRepo;
+    // TODO use nodecache for expiration
+    this._diffCache = {};
   }
 
   async addStash(message) {
@@ -151,12 +153,12 @@ class NGWrap {
           const newC = await this.r.getCommit(newFilesOid);
           newFiles = {
             sha1: newC.sha(),
-            ...(await this.getDiff({ commit: newC })),
+            ...(await this.getChanges({ commit: newC })),
           };
           if (!newFiles.fileLineDiffs.length) newFiles = undefined;
         }
-        return /** @type {Commit & { newFiles?: Commit }} */ ({
-          ...(await this.getDiff({ commit: stash })),
+        return /** @type {Commit} */ ({
+          ...(await this.getChanges({ commit: stash })),
           ...formatCommit(stash),
           newFiles,
           reflogId: `${index}`,
@@ -229,7 +231,7 @@ class NGWrap {
     // TODO only keep formatCommit, the stats should go in a details call
     /** @type {Commit[]} */
     const result = await Promise.all(
-      commits.map(async (c) => ({ ...(await this.getDiff({ commit: c })), ...formatCommit(c) }))
+      commits.map(async (c) => ({ ...(await this.getChanges({ commit: c })), ...formatCommit(c) }))
     );
     return result;
   }
@@ -313,90 +315,110 @@ class NGWrap {
 
   // TODO whitespace
   /**
+   * @typedef {{
+   *   diffKey?: string;
+   *   commit?: nodegit.Commit;
+   *   oid?: string | nodegit.Oid;
+   *   oldOid?: string | nodegit.Oid;
+   *   ignoreWhiteSpace?: boolean;
+   * }} DiffArgs
+   * @param {DiffArgs} args
+   */
+  async getDiff({ diffKey, commit, oid, oldOid }) {
+    if (diffKey) {
+      if (this._diffCache[diffKey]) return this._diffCache[diffKey];
+      const s = diffKey.split('/');
+      oid = s[0];
+      oldOid = s[1];
+      if (oldOid === 'null') oldOid = null;
+    }
+    let newTree, oldTree;
+    const toIndex = oid === 'index';
+    const toWorkTree = oid === 'worktree';
+    if (toIndex || toWorkTree) {
+      const head = await this.r.getHeadCommit();
+      if (head) {
+        oldTree = await head.getTree();
+      }
+      oldOid = `HEAD@${Date.now()}`;
+    } else {
+      if (oid) {
+        commit = await this.r.getCommit(oid);
+        if (!commit) throw new Error(`No commit ${oid}`);
+      } else {
+        oid = commit.id();
+      }
+      if (!commit) throw new Error('need commit or oid');
+
+      newTree = await commit.getTree();
+
+      if (!oldOid && oldOid !== null) {
+        oldOid = (await commit.parents()[0]) || null;
+      }
+      if (oldOid) {
+        const oC = await this.r.getCommit(oldOid);
+        if (!oC) throw new Error(`No commit oldOid ${oid}`);
+        oldTree = await oC.getTree();
+      }
+    }
+
+    const diff = toIndex
+      ? await nodegit.Diff.treeToIndex(this.r, oldTree)
+      : toWorkTree
+      ? await nodegit.Diff.treeToWorkdir(this.r, oldTree)
+      : await nodegit.Diff.treeToTree(this.r, oldTree, newTree);
+    // Find renames, compact diff
+    await diff.findSimilar({ flags: nodegit.Diff.FIND.RENAMES });
+
+    diffKey = `${oid}/${oldOid}`;
+    this._diffCache[diffKey] = diff;
+
+    return { diffKey, diff };
+  }
+
+  /**
    * Get changes between oldOid and oid.
    * You can pass the commit instead of oid.
    * If oldOid is `null`, the entire tree of oid is shown.
    * If oldOid is falsy, the commit's leftmost parent is assumed.
-   *
-   * @param {{
-   *   commit?: nodegit.Commit;
-   *   oid?: string | nodegit.Oid;
-   *   oldOid?: string | nodegit.Oid;
-   *   whitespace?: boolean;
-   * }} arg
    */
-  async getDiff({ commit, oid, oldOid }) {
-    if (oid) {
-      // TODO index, worktree
-      commit = await this.r.getCommit(oid);
-      if (!commit) throw new Error(`No commit ${oid}`);
-    } else {
-      oid = commit.id();
-    }
-    if (!commit) throw new Error('need commit or oid');
+  async getChanges(/** @type {DiffArgs} */ args) {
+    const { diffKey, diff } = await this.getDiff(args);
 
-    const newTree = await commit.getTree();
-    let oldTree;
-
-    if (!oldOid && oldOid !== null) {
-      oldOid = (await commit.parents()[0]) || null;
-    }
-    if (oldOid) {
-      const oC = await this.r.getCommit(oldOid);
-      if (!oC) throw new Error(`No commit oldOid ${oid}`);
-      oldTree = await oC.getTree();
-    }
-
-    // TODO expiring cache keyed on oids
-    // const key = `${oid}/${oldOid}`;
-    const diff = await nodegit.Diff.treeToTree(this.r, oldTree, newTree);
-    // Find renames, compact diff
-    await diff.findSimilar({ flags: nodegit.Diff.FIND.RENAMES });
     const stat = await diff.getStats();
     const additions = +stat.insertions();
     const deletions = +stat.deletions();
 
     const patches = await diff.patches();
-    /** @type{DiffStat[]} */
-    const fileLineDiffs = patches.map((p, patchNum) => {
+    /** @type {DiffStat[]} */
+    const fileLineDiffs = patches.map((p, idx) => {
       const fileName = p.isDeleted() ? p.oldFile().path() : p.newFile().path();
       const oldFileName = p.isAdded() ? fileName : p.oldFile().path();
       const displayName = p.isRenamed() ? `${oldFileName} → ${fileName}` : fileName;
       const { total_additions, total_deletions } = p.lineStats();
 
       return {
+        idx,
         oldFileName, // TODO only when renamed or deleted
         fileName, // TODO not if deleted
         displayName, // TODO client-side
-        patchNum,
         additions: total_additions,
         deletions: total_deletions,
         type: fileType(fileName || oldFileName),
       };
     });
-    return { additions, deletions, fileLineDiffs };
+
+    return { additions, deletions, diffKey, fileLineDiffs };
   }
 
-  // TODO async getStagingDiff() {}
-
-  // TODO if no hash compare worktree/index+stashed
-  // TODO vs other hash
-  // TODO whitespace
   // TODO limit and cursor{hunk,line}
-  // TODO caching
-  async diffFile({ sha1, patchNum, ignoreWhiteSpace }) {
-    let diff;
-    if (sha1) {
-      const c = await this.r.getCommit(sha1).catch(normalizeError);
-      const diffs = await c.getDiff();
-      diff = diffs[0];
-      await diff.findSimilar({ flags: nodegit.Diff.FIND.RENAMES });
-    } else {
-      throw 'not implemented yet';
-    }
-    const patch = (await diff.patches())[patchNum];
+  /** @param {{ diffKey: string; idx: number }} arg */
+  async diffFile({ diffKey, idx }) {
+    const diff = await this.getDiff({ diffKey });
+    const patch = (await diff.patches())[idx];
+    if (!patch) throw new Error(`Invalid idx ${idx} for diffKey ${diffKey}`);
+
     const text = [`diff --git a/${patch.oldFile().path()} b/${patch.newFile().path()}`];
-    if (!patch) throw new Error(`No patch ${patchNum}`);
     for (const hunk of await patch.hunks()) {
       const lines = await hunk.lines();
       text.push(
