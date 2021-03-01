@@ -462,7 +462,7 @@ class FileViewModel {
   }
 
   getSpecificDiff() {
-    return components.create(!this.name() || `${this.fileType()}diff`, {
+    return components.create(`${this.fileType()}diff`, {
       repoPath: this.staging.repoPath,
 
       diffKey: this.diffKey,
@@ -500,7 +500,10 @@ class FileViewModel {
       new Date().getTime() - this.staging.mutedTime < ungit.config.disableDiscardMuteTime
     ) {
       this.server
-        .postPromise('/discardchanges', { path: this.staging.repoPath(), file: this.name() })
+        .postPromise('/discardchanges', {
+          path: this.staging.repoPath(),
+          file: this.name() || this.oldName(),
+        })
         .catch((e) => this.server.unhandledRejection(e));
     } else {
       components
@@ -512,7 +515,10 @@ class FileViewModel {
         .closeThen((diag) => {
           if (diag.result()) {
             this.server
-              .postPromise('/discardchanges', { path: this.staging.repoPath(), file: this.name() })
+              .postPromise('/discardchanges', {
+                path: this.staging.repoPath(),
+                file: this.name() || this.oldName(),
+              })
               .catch((e) => this.server.unhandledRejection(e));
           }
           if (diag.result() === 'mute') this.staging.mutedTime = new Date().getTime();
@@ -522,7 +528,10 @@ class FileViewModel {
 
   ignoreFile() {
     this.server
-      .postPromise('/ignorefile', { path: this.staging.repoPath(), file: this.name() })
+      .postPromise('/ignorefile', {
+        path: this.staging.repoPath(),
+        file: this.name() || this.oldName(),
+      })
       .catch((err) => {
         if (err.errorCode == 'file-already-git-ignored') {
           // The file was already in the .gitignore, so force an update of the staging area (to hopefully clear away this file)
@@ -535,7 +544,10 @@ class FileViewModel {
 
   resolveConflict() {
     this.server
-      .postPromise('/resolveconflicts', { path: this.staging.repoPath(), files: [this.name()] })
+      .postPromise('/resolveconflicts', {
+        path: this.staging.repoPath(),
+        files: [this.name() || this.oldName()],
+      })
       .catch((e) => this.server.unhandledRejection(e));
   }
 
@@ -543,7 +555,7 @@ class FileViewModel {
     this.server
       .postPromise('/launchmergetool', {
         path: this.staging.repoPath(),
-        file: this.name(),
+        file: this.name() || this.oldName(),
         tool: mergeTool,
       })
       .catch((e) => this.server.unhandledRejection(e));
