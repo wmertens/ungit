@@ -87,6 +87,10 @@ class RefViewModel extends Selectable {
     };
   }
 
+  displayHtml() {
+    return '';
+  }
+
   setSha1(sha1) {
     this.sha1 = sha1;
     this.node(this.graph.getNode(sha1));
